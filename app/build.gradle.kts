@@ -29,6 +29,7 @@ android {
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = file(keystoreFile!!)
+                storeType = "JKS"
                 storePassword = keystorePassword
                 keyAlias = keyAliasValue
                 keyPassword = keyPasswordValue
