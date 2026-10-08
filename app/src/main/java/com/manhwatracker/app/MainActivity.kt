@@ -497,22 +497,14 @@ class MainActivity : Activity() {
         chapterAdapter = null
         loadMoreButton = null
 
-        val grid = GridView(this).apply {
-            numColumns = 5
-            horizontalSpacing = dp(5)
-            verticalSpacing = dp(5)
-            stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            gravity = Gravity.CENTER
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            isVerticalScrollBarEnabled = true
-            isNestedScrollingEnabled = false
-            selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
-            setPadding(0, dp(8), 0, dp(12))
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(0, dp(4), 0, dp(10))
+            setPadding(0, dp(4), 0, dp(8))
         }
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -545,7 +537,10 @@ class MainActivity : Activity() {
             12f,
             COLOR_SUBTEXT,
         ).apply { setPadding(0, dp(8), 0, 0) })
-        grid.addHeaderView(header, null, false)
+        page.addView(header, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
 
         if (manhwa.totalChapters == null) {
             val minimumForReadChapters = (manhwa.readChapters.maxOrNull() ?: 0) + 20
@@ -554,15 +549,21 @@ class MainActivity : Activity() {
                 maxOf(
                     INITIAL_UNKNOWN_CHAPTERS,
                     ((minimumForReadChapters + CHAPTER_PAGE_SIZE - 1) / CHAPTER_PAGE_SIZE) *
-                        CHAPTER_PAGE_SIZE,
+                    CHAPTER_PAGE_SIZE,
                 ),
             )
         }
-        if (manhwa.totalChapters == null && unknownChapterLimit < Manhwa.MAX_CHAPTERS) {
-            loadMoreButton = makeButton("نمایش ۱۰۰ فصل بعدی", primary = false) {
-                expandUnknownChapters()
-            }
-            grid.addFooterView(loadMoreButton, null, true)
+
+        val grid = GridView(this).apply {
+            numColumns = 5
+            horizontalSpacing = dp(5)
+            verticalSpacing = dp(5)
+            stretchMode = GridView.STRETCH_COLUMN_WIDTH
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            isVerticalScrollBarEnabled = true
+            selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            setPadding(0, dp(8), 0, dp(8))
         }
         val count = manhwa.totalChapters ?: unknownChapterLimit
         chapterAdapter = ChapterGridAdapter(this) { chapter ->
@@ -570,12 +571,26 @@ class MainActivity : Activity() {
         }.apply { setChapterCount(count) }
         grid.adapter = chapterAdapter
         grid.setOnItemClickListener { _, _, position, _ ->
-            val chapter = position - grid.headerViewsCount + 1
+            val chapter = position + 1
             val currentLimit = items.getOrNull(index)?.totalChapters ?: unknownChapterLimit
             if (chapter in 1..currentLimit) toggleChapter(index, chapter)
         }
         detailGrid = grid
-        contentHost.addView(grid, FrameLayout.LayoutParams(
+        page.addView(grid, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
+        ))
+        if (manhwa.totalChapters == null && unknownChapterLimit < Manhwa.MAX_CHAPTERS) {
+            loadMoreButton = makeButton("نمایش ۱۰۰ فصل بعدی", primary = false) {
+                expandUnknownChapters()
+            }
+            page.addView(loadMoreButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { topMargin = dp(4) })
+        }
+        contentHost.addView(page, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
@@ -620,7 +635,7 @@ class MainActivity : Activity() {
             refreshLoadMoreFooter()
         }
         detailGrid?.post {
-            detailGrid?.smoothScrollToPosition((detailGrid?.headerViewsCount ?: 0) + next - 1)
+            detailGrid?.smoothScrollToPosition(next - 1)
         }
     }
 
@@ -636,9 +651,10 @@ class MainActivity : Activity() {
 
     private fun refreshLoadMoreFooter() {
         val button = loadMoreButton ?: return
-        if (unknownChapterLimit >= Manhwa.MAX_CHAPTERS) {
-            detailGrid?.removeFooterView(button)
-            loadMoreButton = null
+        button.visibility = if (unknownChapterLimit >= Manhwa.MAX_CHAPTERS) {
+            View.GONE
+        } else {
+            View.VISIBLE
         }
     }
 
