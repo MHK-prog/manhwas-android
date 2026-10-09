@@ -1,63 +1,42 @@
-# مانهواها برای اندروید
+# manhwas-app
+A minimalist, offline-first PWA to track your manhwa reading progress. Simple, fast, and easy to use.
 
-نسخهٔ بومی اندرویدِ برنامهٔ ثبت پیشرفت مانهوا. رابط با Kotlin و Viewهای خود اندروید نوشته شده و برای اجرا به WebView یا اتصال اینترنت نیاز ندارد.
+# Manhwas
 
-## امکانات
+A lightweight, minimalist web application to keep track of your manhwa reading progress.
 
-- ثبت عنوان با تعداد فصل مشخص یا نامشخص
-- علامت‌گذاری جداگانهٔ فصل‌ها و حفظ دقیق فصل‌های خوانده‌شده هنگام ویرایش
-- وضعیت‌های «در حال خواندن»، «متوقف» و «تمام‌شده»
-- جست‌وجو، فیلتر وضعیت و مرتب‌سازی بر اساس آخرین تغییر یا عنوان
-- رفتن به فصل بعدی و نمایش مرحله‌ای فهرست فصل‌های عنوان‌های ناتمام
-- نمایش درصد پیشرفت وقتی تعداد کل فصل‌ها مشخص باشد
-- ویرایش و حذف عنوان‌ها
-- ذخیرهٔ خودکار در فایل `manhwas.json` داخل پوشه‌ای که کاربر با انتخاب‌گر خود اندروید برمی‌گزیند
-- خروجی‌گرفتن از بکاپ JSON
+Key Features:
 
-در اجرای اول، برنامه انتخاب پوشه را باز می‌کند. مجوز پوشه برای استفاده‌های بعدی نگه داشته می‌شود. اگر پوشه جابه‌جا یا حذف شود، باید پوشه را دوباره انتخاب کرد. فایل داده بیرون از فضای خصوصی برنامه می‌ماند و با حذف برنامه پاک نمی‌شود.
+- Offline-First: Works without an internet connection using PWA technology.
+- Simple & Fast: No unnecessary clutter, just your progress.
+- Backup: Export your data as a JSON file.
+- Installable: Add it to your home screen and use it like a native app.
 
-## ساخت APK محلی
+Built with HTML, CSS, and Vanilla JavaScript. KISS (Keep It Simple, Stupid) principle applied!
+# مانهواهام برای اندروید
 
-Android Studio یا Android SDK، JDK 17 و بسته‌های Android SDK Platform 36 و Build Tools 36.0.0 لازم‌اند. در PowerShell از همین پوشه اجرا کن:
+این مخزن نسخهٔ اندرویدیِ برنامهٔ وب است. رابط کاربری اصلی در `index.html` باقی مانده و اپ Android آن را داخل WebView امن و آفلاین نمایش می‌دهد. شناسهٔ بسته برای نصب نسخهٔ جدید روی نسخهٔ قبلی حفظ شده است.
 
-    .\gradlew.bat assembleDebug
+## ذخیره‌سازی
 
-فایل آزمایشی اینجا ساخته می‌شود:
+از منوی برنامه گزینهٔ «انتخاب پوشهٔ ذخیره‌سازی» را بزنید. Android فقط به همان پوشه‌ای که انتخاب می‌کنید دسترسی می‌دهد و فایل `manhwas.json` را آنجا نگه می‌دارد. اگر پوشه فایل داده داشته باشد، هنگام انتخاب همان داده‌ها بارگذاری می‌شوند. تا وقتی پوشه انتخاب نشده، برنامه روی حافظهٔ خصوصی خود اپ ذخیره می‌کند. گزینهٔ پشتیبان‌گیری هم یک فایل JSON با انتخاب‌گر Android می‌سازد.
 
-    app\build\outputs\apk\debug\app-debug.apk
+## ساخت APK از GitHub
 
-اگر اجرای wrapper در مسیری با نویسه‌های غیرلاتین خطای پیدا نکردن `gradle-wrapper.jar` داد، پروژه را به مسیری با حروف لاتین منتقل کن و دوباره اجرا کن.
+با push کردن تغییرات به شاخهٔ `main`، یا اجرای دستی workflow از زبانهٔ **Actions**، GitHub یک APK نسخهٔ release با کلید امضای ذخیره‌شده در Secretهای مخزن می‌سازد:
 
-نسخهٔ debug با کلید آزمایشی Android امضا می‌شود و برای نصب شخصی مناسب است. برای انتشار یا به‌روزرسانی پایدار، از کلید release خودت استفاده کن.
+1. مخزن را در GitHub باز کنید و وارد **Actions** شوید.
+2. workflow با نام **Build signed Android APK** را اجرا کنید.
+3. پس از پایان موفق، از صفحهٔ اجرای workflow بخش **Artifacts** فایل `manhwas-release-apk` را دریافت و از ZIP استخراج کنید.
 
-## ساخت APK امضاشده با GitHub Actions
+این workflow از Secretهای امضای release همین مخزن استفاده می‌کند و امضای APK را پیش از انتشار Artifact بررسی می‌کند.
 
-Workflow فایل `.github/workflows/build-apk.yml` فقط با اجرای دستی شروع می‌شود و نسخهٔ release را با کلید ذخیره‌شده در GitHub Secrets امضا می‌کند.
+## ساخت محلی
 
-1. محتوای این پوشه را در ریشهٔ مخزن GitHub خودت قرار بده.
-2. یک کلید release بساز و نسخهٔ امن آن را نگه دار. در PowerShell:
+با Android SDK نصب‌شده و JDK 17 یا جدیدتر:
 
-       keytool -genkeypair -v -keystore manhwas-release.jks -storetype JKS -alias manhwas -keyalg RSA -keysize 4096 -validity 10000
+```powershell
+.\gradlew.bat --no-daemon :app:assembleDebug
+```
 
-3. مقدار Base64 فایل کلید را بساز و به‌عنوان secret مخزن با نام `ANDROID_KEYSTORE_BASE64` ثبت کن:
-
-       [Convert]::ToBase64String([IO.File]::ReadAllBytes(".\manhwas-release.jks")) | Set-Clipboard
-
-4. این سه secret را هم در **Settings → Secrets and variables → Actions** اضافه کن:
-   - `ANDROID_KEYSTORE_PASSWORD`: گذرواژهٔ مخزن کلید
-   - `ANDROID_KEY_ALIAS`: مقدار `manhwas`
-   - `ANDROID_KEY_PASSWORD`: گذرواژهٔ کلید
-5. از **Actions → Build signed Android APK → Run workflow** اجرا کن. پس از پایان، artifact با نام `manhwas-release-apk` را دانلود کن.
-
-کلید release برای به‌روزرسانی‌های بعدی باید همان کلید بماند. فایل `.jks` را در مخزن یا داخل پروژه قرار نده. اگر کلید گم شود، نسخهٔ امضاشدهٔ جدید به‌عنوان به‌روزرسانی همان برنامه نصب نمی‌شود.
-
-## ساختار
-
-    app/src/main/java/com/manhwatracker/app/
-      MainActivity.kt       رابط و گردش کار برنامه
-      Manhwa.kt             مدل داده و تبدیل JSON
-      ManhwaStorage.kt      ذخیره در پوشهٔ انتخابی و پشتیبان‌گیری
-    app/src/main/res/        نام برنامه، تم و آیکن
-    .github/workflows/       ساخت APK امضاشده در GitHub Actions
-
-شناسهٔ برنامه `com.manhwatracker.app` است. اگر بعداً آن را تغییر بدهی، اندروید آن را برنامه‌ای جداگانه می‌شناسد.
+خروجی debug محلی در `app/build/outputs/apk/debug/app-debug.apk` قرار می‌گیرد. برای ساخت release امضاشده، Secretهای `ANDROID_KEYSTORE_BASE64`، `ANDROID_KEYSTORE_PASSWORD`، `ANDROID_KEY_ALIAS` و `ANDROID_KEY_PASSWORD` لازم‌اند.

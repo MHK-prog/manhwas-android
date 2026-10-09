@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+<title>مانهواهام</title>
+
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#121212">
+
+<style>
+  :root {
+    --bg: #121212; --surface: #1e1e1e; --text: #eee; --sub-text: #aaa;
+    --border: #333; --primary: #bb86fc; --danger: #cf6679;
+    --backdrop: rgba(0,0,0,0.7);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; margin: 0;
+    display: flex; flex-direction: column;
+    overflow-x: hidden;
+  }
+  .hidden { display: none !important; }
+  .content { flex: 1; padding: 16px; }
+
+  /* هدر */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .header-actions { display: flex; align-items: center; gap: 10px; }
+  .btn {
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    font: inherit; touch-action: manipulation;
+  }
+  .btn-primary { background: var(--primary); color: #121212; font-weight: bold; border: 0; }
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+  }
+
+  /* آیتم‌های لیست */
+  .manhwa-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; margin-bottom: 12px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  .info { flex: 1; cursor: pointer; min-width: 0; }
+  .title { font-weight: bold; display: block; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: 0.85rem; color: var(--sub-text); display: flex; justify-content: space-between; }
+  .del-btn { background: none; border: 0; color: var(--danger); font-size: 1.2rem; padding: 8px; cursor: pointer; }
+
+  /* نوار پیشرفت در صفحه لیست */
+  .bar-bg { height: 6px; background: #2a2a2a; border-radius: 99px; margin-top: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--primary); transition: width 0.2s ease; }
+
+  /* چیپ‌ها (چپترها) */
+  .chips {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    gap: 8px; margin-top: 16px; user-select: none;
+    -webkit-user-select: none;
+  }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 6px; text-align: center; font-size: 0.9rem; cursor: pointer;
+    touch-action: pan-y; /* اسکرول عمودی بدون مشکل کار می‌کنه */
+  }
+  .chip.on { background: var(--primary); color: #121212; font-weight: bold; border-color: var(--primary); }
+
+  /* مودال‌ها */
+  dialog {
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    width: 90%; max-width: 400px; background: var(--surface); color: var(--text);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  }
+  dialog::backdrop { background: var(--backdrop); }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .modal-head h3 { margin: 0; }
+  .modal-close { background: none; border: 0; color: var(--sub-text); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+  form { display: flex; flex-direction: column; gap: 12px; }
+  input {
+    padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+    font: inherit; background: var(--bg); color: var(--text); outline: none;
+  }
+  input:focus { border-color: var(--primary); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+  /* سایدبار کشویی */
+  .backdrop {
+    position: fixed; inset: 0; background: var(--backdrop);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 10;
+  }
+  .sidebar {
+    position: fixed; top: 0; right: 0; height: 100vh; width: 260px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    transform: translateX(100%); transition: transform 0.2s ease;
+    padding: 20px 16px; display: flex; flex-direction: column; gap: 12px; z-index: 11;
+  }
+  body.menu-open .sidebar { transform: translateX(0); }
+  body.menu-open .backdrop { opacity: 1; pointer-events: auto; }
+  .side-btn { width: 100%; text-align: right; padding: 12px; font-weight: 600; }
+
+  footer { text-align: center; padding: 16px 0 8px; font-size: 0.8rem; color: var(--sub-text); direction: ltr; }
+</style>
+</head>
+<body>
+
+  <!-- سایدبار و پرده تاریک -->
+  <div class="backdrop" id="backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <h3 style="margin-top:0;">منو برنامه</h3>
+    <button class="btn side-btn" id="btn-storage">انتخاب پوشهٔ ذخیره‌سازی</button>
+    <button class="btn side-btn" id="btn-export">پشتیبان‌گیری از اطلاعات</button>
+    <p id="storage-status" style="font-size:0.8rem; color:var(--sub-text); line-height:1.6; margin:0;">تا انتخاب پوشه، اطلاعات در حافظهٔ برنامه ذخیره می‌شوند.</p>
+    <span style="font-size:0.8rem; color:var(--sub-text); margin-top:auto; line-height:1.6;">
+      با بکاپ‌گیری دیتات هیچ‌وقت از بین نمیره.
+    </span>
+  </aside>
+
+  <div class="content">
+    <!-- صفحه ۱: لیست مانهواها -->
+    <div id="view-list">
+      <div class="header">
+        <div class="header-actions">
+          <button class="icon-btn" id="btn-menu" aria-label="منو">☰</button>
+          <h2 style="margin:0">مانهواها</h2>
+        </div>
+        <button class="btn btn-primary" id="btn-open-add">+ افزودن</button>
+      </div>
+      <div id="manhwa-list"></div>
+    </div>
+
+    <!-- صفحه ۲: چک‌لیست و چپترها -->
+    <div id="view-details" class="hidden">
+      <div class="header">
+        <button class="btn" id="btn-back">← برگشت</button>
+        <div class="header-actions">
+          <span id="detail-progress" style="font-size:0.9rem; color:var(--sub-text)"></span>
+          <button class="icon-btn" id="btn-edit" aria-label="ویرایش">✎</button>
+        </div>
+      </div>
+      <h2 id="detail-title" style="margin:0 0 6px;"></h2>
+      <div id="chips-container" class="chips"></div>
+    </div>
+  </div>
+
+  <footer>v0.0.3</footer>
+
+  <!-- مودال چندمنظوره و سراسری -->
+  <dialog id="app-modal">
+    <div class="modal-head">
+      <h3 id="modal-title"></h3>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div id="modal-body"></div>
+  </dialog>
+
+<script>
+const KEY = 'manhwas';
+let nativeStorage = typeof AndroidStorage !== 'undefined';
+let data = JSON.parse((nativeStorage && AndroidStorage.loadData()) || localStorage.getItem(KEY) || '[]');
+let activeIndex = null;
+let currentSet = new Set();
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+const save = () => {
+  const serialized = JSON.stringify(data);
+  localStorage.setItem(KEY, serialized);
+  if (nativeStorage) AndroidStorage.saveData(serialized);
+};
+
+/* =========================================
+   مودال عمومی
+========================================= */
+const appModal = document.getElementById('app-modal');
+
+appModal.addEventListener('click', (e) => {
+  const r = appModal.getBoundingClientRect();
+  const clickedOutside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  if (clickedOutside || e.target.closest('[data-close]')) appModal.close();
+});
+
+function openModal(title, contentHtml) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = contentHtml;
+  appModal.showModal();
+}
+
+/* =========================================
+   کنترل صفحات و لیست
+========================================= */
+function showView(view) {
+  const isList = view === 'list';
+  document.getElementById('view-list').classList.toggle('hidden', !isList);
+  document.getElementById('view-details').classList.toggle('hidden', isList);
+  isList ? (activeIndex = null, renderList()) : renderDetails();
+}
+
+function renderList() {
+  const cont = document.getElementById('manhwa-list');
+  if (!data.length) {
+    cont.innerHTML = '<p style="text-align:center; color:var(--sub-text); margin-top:40px;">هنوز مانهوایی ثبت نکردی.</p>';
+    return;
+  }
+  cont.innerHTML = data.map((m, i) => {
+    const readCount = m.read.length;
+    const pct = m.total > 0 ? Math.round((readCount / m.total) * 100) : 0;
+    return `
+      <div class="manhwa-item">
+        <div class="info" onclick="openDetails(${i})">
+          <span class="title">${escapeHtml(m.title)}</span>
+          <div class="sub">
+            <span>${readCount} از ${m.total} خوانده شد</span>
+            <span>${pct}%</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width: ${pct}%"></div></div>
+        </div>
+        <button class="del-btn" onclick="askDelete(${i})">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function openDetails(idx) {
+  activeIndex = idx;
+  showView('details');
+}
+
+function renderDetails() {
+  const m = data[activeIndex];
+  if (!m) return showView('list');
+  document.getElementById('detail-title').textContent = m.title;
+  currentSet = new Set(m.read);
+  updateCounter();
+
+  let html = '';
+  for (let i = 1; i <= m.total; i++) {
+    html += `<div class="chip ${currentSet.has(i) ? 'on' : ''}" data-ch="${i}">${i}</div>`;
+  }
+  document.getElementById('chips-container').innerHTML = html;
+}
+
+function updateCounter() {
+  const m = data[activeIndex];
+  document.getElementById('detail-progress').textContent = `${currentSet.size} / ${m.total}`;
+}
+
+/* =========================================
+   تیک زدن تکی با تشخیص خودکار اسکرول (بدون لگ)
+========================================= */
+const chipsContainer = document.getElementById('chips-container');
+
+// رویداد click خودش ذاتاً فرق اسکرول و کلیک واقعی رو در موبایل و دسکتاپ تشخیص میده
+chipsContainer.addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+
+  const ch = +chip.dataset.ch;
+  if (currentSet.has(ch)) {
+    currentSet.delete(ch);
+    chip.classList.remove('on');
+  } else {
+    currentSet.add(ch);
+    chip.classList.add('on');
+  }
+
+  updateCounter();
+  data[activeIndex].read = Array.from(currentSet).sort((a, b) => a - b);
+  save();
+});
+
+/* =========================================
+   مودال‌های افزودن، ویرایش و حذف
+========================================= */
+document.getElementById('btn-open-add').onclick = () => {
+  openModal('افزودن مانهوا', `
+    <form onsubmit="saveAdd(event)">
+      <input id="in-title" placeholder="نام مانهوا" required>
+      <input id="in-total" type="number" min="1" placeholder="تعداد کل چپترها" required>
+      <input id="in-readto" type="number" min="0" placeholder="تا چپتر چند خوندی؟ (مثلا 180)">
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>انصراف</button>
+        <button type="submit" class="btn btn-primary">ذخیره</button>
+      </div>
+    </form>
+  `);
+};
+
+window.saveAdd = (e) => {
+  e.preventDefault();
+  const title = document.getElementById('in-title').value.trim();
+  const total = +document.getElementById('in-total').value;
+  let readTo = +(document.getElementById('in-readto').value || 0);
+
+  if (readTo > total) readTo = total;
+  const read = [];
+  for (let i = 1; i <= readTo; i++) read.push(i);
+
+  if (title && total > 0) {
+    data.push({ title, total, read });
+    save();
+    renderList();
+    appModal.close();
+  }
+};
+
+document.getElementById('btn-edit').onclick = () => {
+  const m = data[activeIndex];
+  const maxRead = m.read.length ? Math.max(...m.read) : 0;
+
+  openModal('ویرایش مانهوا', `
+    <form onsubmit="saveEdit(event)">
+      <input id="edit-title" required>
+      <input id="edit-total" type="number" min="1" value="${m.total}" required>
+      <input id="edit-readto" type="number" min="0" value="${maxRead}" placeholder="تا چپتر چند خوندی؟ (مثلا 180)">
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>انصراف</button>
+        <button type="submit" class="btn btn-primary">ثبت تغییرات</button>
+      </div>
+    </form>
+  `);
+  document.getElementById('edit-title').value = m.title;
+};
+
+window.saveEdit = (e) => {
+  e.preventDefault();
+  const m = data[activeIndex];
+  m.title = document.getElementById('edit-title').value.trim();
+  m.total = +document.getElementById('edit-total').value;
+
+  let readTo = +(document.getElementById('edit-readto').value || 0);
+  if (readTo > m.total) readTo = m.total;
+
+  m.read = [];
+  for (let i = 1; i <= readTo; i++) m.read.push(i);
+
+  save();
+  renderDetails();
+  appModal.close();
+};
+
+function askDelete(idx) {
+  openModal('حذف مانهوا', `
+    <p style="color:var(--sub-text); margin: 0 0 16px;">آیا از حذف «${escapeHtml(data[idx].title)}» مطمئنی؟</p>
+    <div class="modal-actions">
+      <button class="btn" data-close>خیر</button>
+      <button class="btn" style="background:var(--danger); color:#fff; border:0;" onclick="confirmDelete(${idx})">بله، حذف بشه</button>
+    </div>
+  `);
+}
+
+window.confirmDelete = (idx) => {
+  data.splice(idx, 1);
+  save();
+  renderList();
+  appModal.close();
+};
+
+/* =========================================
+   سایدبار و سوایپ لمسی
+========================================= */
+const toggleMenu = (open) => document.body.classList.toggle('menu-open', open);
+
+document.getElementById('btn-menu').onclick = () => toggleMenu(true);
+document.getElementById('backdrop').onclick = () => toggleMenu(false);
+
+let touchStartX = 0;
+document.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+}, { passive: true });
+
+document.addEventListener('touchend', (e) => {
+  const diffX = e.changedTouches[0].clientX - touchStartX;
+  const isFromRightEdge = touchStartX > window.innerWidth - 30;
+
+  if (isFromRightEdge && diffX < -50) toggleMenu(true);
+  if (document.body.classList.contains('menu-open') && diffX > 60) toggleMenu(false);
+}, { passive: true });
+
+/* =========================================
+   پشتیبان‌گیری (Export / Import)
+========================================= */
+document.getElementById('btn-export').onclick = () => {
+  if (nativeStorage) {
+    AndroidStorage.exportBackup(JSON.stringify(data, null, 2));
+    toggleMenu(false);
+    return;
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `manhwas-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  toggleMenu(false);
+};
+
+document.getElementById('btn-storage').onclick = () => {
+  if (nativeStorage) AndroidStorage.chooseFolder();
+  else alert('برای انتخاب پوشه، نسخهٔ اندروید را نصب کنید.');
+};
+
+window.onAndroidFolderPicked = (serialized, folderName) => {
+  if (serialized) data = JSON.parse(serialized);
+  else save();
+  localStorage.setItem(KEY, JSON.stringify(data));
+  document.getElementById('storage-status').textContent = `پوشهٔ ذخیره‌سازی: ${folderName}`;
+  renderList();
+};
+window.onAndroidStorageReady = (folderName) => {
+  if (folderName) document.getElementById('storage-status').textContent = `پوشهٔ ذخیره‌سازی: ${folderName}`;
+};
+
+document.getElementById('btn-back').onclick = () => showView('list');
+
+// اجرای اولیه
+showView('list');
+</script>
+<script>
+  if (!(typeof AndroidStorage !== "undefined") && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js");
+    });
+  }
+</script>
+
+</body>
+</html>
