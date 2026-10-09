@@ -21,8 +21,6 @@ android {
         versionName = "2.0.0"
     }
 
-    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/web-assets"))
-
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
@@ -43,14 +41,17 @@ android {
     }
 }
 
-val copyWebApp by tasks.registering(Copy::class) {
-    from(rootProject.projectDir) {
-        include("index.html", "manifest.webmanifest", "sw.js")
+androidComponents {
+    onVariants { variant ->
+        val copyWebAssets = tasks.register<Copy>("copyWebAssets${variant.name.replaceFirstChar { it.uppercase() }}") {
+            from(rootProject.projectDir) {
+                include("index.html", "manifest.webmanifest", "sw.js")
+                into("www")
+            }
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(copyWebAssets) { it.destinationDirectory }
     }
-    into(layout.buildDirectory.dir("generated/web-assets/www"))
 }
-
-tasks.named("preBuild").configure { dependsOn(copyWebApp) }
 
 dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
