@@ -1,5 +1,32 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
 plugins {
     id("com.android.application")
+}
+
+abstract class CopyWebAssetsTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceFiles: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copyAssets() {
+        val destination = outputDirectory.get().dir("www").asFile
+        destination.mkdirs()
+        sourceFiles.files.forEach { source ->
+            source.copyTo(destination.resolve(source.name), overwrite = true)
+        }
+    }
 }
 
 val keystoreFile = providers.environmentVariable("ANDROID_KEYSTORE_FILE").orNull
@@ -43,13 +70,14 @@ android {
 
 androidComponents {
     onVariants { variant ->
-        val copyWebAssets = tasks.register<Copy>("copyWebAssets${variant.name.replaceFirstChar { it.uppercase() }}") {
-            from(rootProject.projectDir) {
-                include("index.html", "manifest.webmanifest", "sw.js")
-                into("www")
-            }
+        val copyWebAssets = tasks.register<CopyWebAssetsTask>("copyWebAssets${variant.name.replaceFirstChar { it.uppercase() }}") {
+            sourceFiles.from(
+                rootProject.file("index.html"),
+                rootProject.file("manifest.webmanifest"),
+                rootProject.file("sw.js"),
+            )
         }
-        variant.sources.assets?.addGeneratedSourceDirectory(copyWebAssets) { it.destinationDirectory }
+        variant.sources.assets?.addGeneratedSourceDirectory(copyWebAssets) { it.outputDirectory }
     }
 }
 
