@@ -42,15 +42,42 @@
   }
 
   /* آیتم‌های لیست */
-  .manhwa-item {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px; margin-bottom: 12px;
-    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  .manhwa-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 14px; align-items: start;
   }
-  .info { flex: 1; cursor: pointer; min-width: 0; }
-  .title { font-weight: bold; display: block; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sub { font-size: 0.85rem; color: var(--sub-text); display: flex; justify-content: space-between; }
-  .del-btn { background: none; border: 0; color: var(--danger); font-size: 1.2rem; padding: 8px; cursor: pointer; }
+  .manhwa-card { min-width: 0; position: relative; }
+  .cover-button {
+    position: relative; display: block; width: 100%; aspect-ratio: 0.72;
+    padding: 0; overflow: hidden; border: 1px solid var(--border);
+    border-radius: 12px; background: var(--surface); color: var(--sub-text);
+    cursor: pointer; touch-action: manipulation;
+  }
+  .cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cover-placeholder { display: grid; place-items: center; width: 100%; height: 100%; font-size: 2.6rem; }
+  .cover-hint { position: absolute; bottom: 8px; inset-inline: 4px; font-size: 0.7rem; text-align: center; }
+  .info-dot {
+    position: absolute; top: 8px; inset-inline-start: 8px; width: 34px; height: 34px;
+    display: grid; place-items: center; border: 1px solid rgba(255,255,255,.28);
+    border-radius: 50%; background: rgba(18,18,18,.78); color: white; font: inherit;
+    font-weight: 800; cursor: pointer; z-index: 1;
+  }
+  .card-title {
+    display: block; width: 100%; padding: 9px 2px 0; border: 0; background: transparent;
+    color: var(--text); font: inherit; font-weight: 700; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+  .empty-state { grid-column: 1 / -1; text-align: center; color: var(--sub-text); margin-top: 40px; }
+  .detail-summary {
+    display: flex; align-items: center; gap: 14px; padding: 14px;
+    margin: 12px 0 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  }
+  .detail-cover { width: 74px; aspect-ratio: .72; flex: 0 0 auto; object-fit: cover; border-radius: 8px; background: var(--bg); }
+  .detail-placeholder { display: grid; place-items: center; color: var(--sub-text); font-size: 2rem; }
+  .detail-metrics { flex: 1; min-width: 0; }
+  .detail-metrics .sub { font-size: .9rem; color: var(--sub-text); display: flex; justify-content: space-between; gap: 8px; }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .danger-button { color: #fff; background: var(--danger); border: 0; }
 
   /* نوار پیشرفت در صفحه لیست */
   .bar-bg { height: 6px; background: #2a2a2a; border-radius: 99px; margin-top: 8px; overflow: hidden; }
@@ -93,7 +120,7 @@
     opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 10;
   }
   .sidebar {
-    position: fixed; top: 0; right: 0; height: 100vh; width: 260px;
+    position: fixed; top: 0; right: 0; height: 100%; width: min(300px, 84vw);
     background: var(--surface); border-left: 1px solid var(--border);
     transform: translateX(100%); transition: transform 0.2s ease;
     padding: 20px 16px; display: flex; flex-direction: column; gap: 12px; z-index: 11;
@@ -119,6 +146,8 @@
     </span>
   </aside>
 
+  <input type="file" id="cover-picker" accept="image/*" class="hidden">
+
   <div class="content">
     <!-- صفحه ۱: لیست مانهواها -->
     <div id="view-list">
@@ -129,24 +158,48 @@
         </div>
         <button class="btn btn-primary" id="btn-open-add">+ افزودن</button>
       </div>
-      <div id="manhwa-list"></div>
+      <div id="manhwa-list" class="manhwa-grid"></div>
     </div>
 
-    <!-- صفحه ۲: چک‌لیست و چپترها -->
-    <div id="view-details" class="hidden">
+    <!-- صفحه اطلاعات مانهوا -->
+    <div id="view-info" class="hidden">
       <div class="header">
-        <button class="btn" id="btn-back">← برگشت</button>
+        <button class="btn" id="btn-info-back">← فهرست</button>
         <div class="header-actions">
-          <span id="detail-progress" style="font-size:0.9rem; color:var(--sub-text)"></span>
           <button class="icon-btn" id="btn-edit" aria-label="ویرایش">✎</button>
         </div>
       </div>
-      <h2 id="detail-title" style="margin:0 0 6px;"></h2>
+      <div class="detail-summary">
+        <img id="info-cover" class="detail-cover hidden" alt="جلد مانهوا" onerror="this.classList.add('hidden'); document.getElementById('info-cover-placeholder').classList.remove('hidden')">
+        <div id="info-cover-placeholder" class="detail-cover detail-placeholder">📖</div>
+        <div class="detail-metrics">
+          <h2 id="detail-title" style="margin:0 0 12px; overflow-wrap:anywhere;"></h2>
+          <div class="sub"><span id="detail-count"></span><span id="detail-percent"></span></div>
+          <div class="bar-bg"><div id="detail-bar" class="bar-fill"></div></div>
+          <div id="detail-last" style="font-size:.8rem; color:var(--sub-text); margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="btn-open-chapters">فهرست چپترها</button>
+        <button class="btn" id="btn-change-cover">تغییر جلد</button>
+        <button class="btn danger-button" id="btn-delete-manhwa">حذف مانهوا</button>
+      </div>
+    </div>
+
+    <!-- صفحه چپترها -->
+    <div id="view-chapters" class="hidden">
+      <div class="header">
+        <button class="btn" id="btn-chapters-back">← اطلاعات</button>
+        <div class="header-actions">
+          <span id="detail-progress" style="font-size:0.9rem; color:var(--sub-text)"></span>
+        </div>
+      </div>
+      <h2 id="chapters-title" style="margin:0 0 6px;"></h2>
       <div id="chips-container" class="chips"></div>
     </div>
   </div>
 
-  <footer>v0.0.3</footer>
+  <footer>v2.1.0</footer>
 
   <!-- مودال چندمنظوره و سراسری -->
   <dialog id="app-modal">
@@ -160,9 +213,25 @@
 <script>
 const KEY = 'manhwas';
 let nativeStorage = typeof AndroidStorage !== 'undefined';
-let data = JSON.parse((nativeStorage && AndroidStorage.loadData()) || localStorage.getItem(KEY) || '[]');
+const createId = () => `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+let loadedData = JSON.parse((nativeStorage && AndroidStorage.loadData()) || localStorage.getItem(KEY) || '[]');
+let needsMigration = false;
+function normalizeManhwa(item) {
+  const m = item && typeof item === 'object' ? item : {};
+  if (typeof m.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(m.id)) {
+    m.id = createId();
+    needsMigration = true;
+  }
+  m.title = String(m.title || 'بدون نام');
+  m.total = Math.max(1, Number(m.total) || 1);
+  m.read = Array.isArray(m.read) ? [...new Set(m.read.map(Number).filter(n => Number.isInteger(n) && n > 0 && n <= m.total))].sort((a, b) => a - b) : [];
+  if (m.cover !== `cover-${m.id}.jpg`) m.cover = null;
+  return m;
+}
+let data = (Array.isArray(loadedData) ? loadedData : []).map(normalizeManhwa);
 let activeIndex = null;
 let currentSet = new Set();
+let pendingBrowserCoverIndex = null;
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 const save = () => {
@@ -170,6 +239,13 @@ const save = () => {
   localStorage.setItem(KEY, serialized);
   if (nativeStorage) AndroidStorage.saveData(serialized);
 };
+if (needsMigration) save();
+
+function getCoverUrl(m) {
+  if (m.coverData) return m.coverData;
+  if (m.cover === `cover-${m.id}.jpg`) return `https://appassets.androidplatform.net/covers/${encodeURIComponent(m.cover)}?v=${Number(m.coverUpdated) || 0}`;
+  return '';
+}
 
 /* =========================================
    مودال عمومی
@@ -192,54 +268,125 @@ function openModal(title, contentHtml) {
    کنترل صفحات و لیست
 ========================================= */
 function showView(view) {
-  const isList = view === 'list';
-  document.getElementById('view-list').classList.toggle('hidden', !isList);
-  document.getElementById('view-details').classList.toggle('hidden', isList);
-  isList ? (activeIndex = null, renderList()) : renderDetails();
+  document.getElementById('view-list').classList.toggle('hidden', view !== 'list');
+  document.getElementById('view-info').classList.toggle('hidden', view !== 'info');
+  document.getElementById('view-chapters').classList.toggle('hidden', view !== 'chapters');
+  if (view === 'list') { activeIndex = null; renderList(); }
+  if (view === 'info') renderInfo();
+  if (view === 'chapters') renderChapters();
 }
 
 function renderList() {
   const cont = document.getElementById('manhwa-list');
   if (!data.length) {
-    cont.innerHTML = '<p style="text-align:center; color:var(--sub-text); margin-top:40px;">هنوز مانهوایی ثبت نکردی.</p>';
+    cont.innerHTML = '<p class="empty-state">هنوز مانهوایی ثبت نکردی.</p>';
     return;
   }
   cont.innerHTML = data.map((m, i) => {
-    const readCount = m.read.length;
-    const pct = m.total > 0 ? Math.round((readCount / m.total) * 100) : 0;
+    const image = getCoverUrl(m);
     return `
-      <div class="manhwa-item">
-        <div class="info" onclick="openDetails(${i})">
-          <span class="title">${escapeHtml(m.title)}</span>
-          <div class="sub">
-            <span>${readCount} از ${m.total} خوانده شد</span>
-            <span>${pct}%</span>
-          </div>
-          <div class="bar-bg"><div class="bar-fill" style="width: ${pct}%"></div></div>
-        </div>
-        <button class="del-btn" onclick="askDelete(${i})">✕</button>
-      </div>
+      <article class="manhwa-card">
+        <button class="cover-button" onclick="chooseCover(${i})" aria-label="انتخاب جلد برای ${escapeHtml(m.title)}">
+          <span class="cover-placeholder">📖<span class="cover-hint">برای انتخاب جلد لمس کن</span></span>
+          ${image ? `<img class="cover-image" src="${escapeHtml(image)}" alt="جلد ${escapeHtml(m.title)}" onerror="this.style.display='none'">` : ''}
+        </button>
+        <button class="info-dot" onclick="openInfo(${i})" aria-label="اطلاعات مانهوا">!</button>
+        <button class="card-title" onclick="openInfo(${i})" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</button>
+      </article>
     `;
   }).join('');
 }
 
-function openDetails(idx) {
+function openInfo(idx) {
   activeIndex = idx;
-  showView('details');
+  showView('info');
 }
 
-function renderDetails() {
+function chooseCover(index) {
+  if (!data[index]) return;
+  if (nativeStorage) {
+    AndroidStorage.chooseCover(data[index].id);
+    return;
+  }
+  pendingBrowserCoverIndex = index;
+  document.getElementById('cover-picker').click();
+}
+
+document.getElementById('cover-picker').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  const index = pendingBrowserCoverIndex;
+  pendingBrowserCoverIndex = null;
+  event.target.value = '';
+  if (!file || !data[index]) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const picture = new Image();
+    picture.onload = () => {
+      const scale = Math.min(1, 700 / picture.width, 1000 / picture.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(picture.width * scale);
+      canvas.height = Math.round(picture.height * scale);
+      canvas.getContext('2d').drawImage(picture, 0, 0, canvas.width, canvas.height);
+      data[index].coverData = canvas.toDataURL('image/jpeg', 0.82);
+      data[index].cover = null;
+      save();
+      renderList();
+      if (activeIndex === index) renderInfo();
+    };
+    picture.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+window.onAndroidCoverSaved = (id) => {
+  const index = data.findIndex(m => m.id === id);
+  if (index < 0) return;
+  data[index].cover = `cover-${id}.jpg`;
+  data[index].coverUpdated = Date.now();
+  delete data[index].coverData;
+  save();
+  renderList();
+  if (activeIndex === index) renderInfo();
+};
+window.onAndroidCoverError = () => alert('ذخیرهٔ جلد انجام نشد. پوشهٔ انتخاب‌شده را بررسی کن.');
+
+function renderInfo() {
   const m = data[activeIndex];
   if (!m) return showView('list');
   document.getElementById('detail-title').textContent = m.title;
+  const image = document.getElementById('info-cover');
+  const placeholder = document.getElementById('info-cover-placeholder');
+  const imageUrl = getCoverUrl(m);
+  image.classList.toggle('hidden', !imageUrl);
+  placeholder.classList.toggle('hidden', !!imageUrl);
+  if (imageUrl) image.src = imageUrl;
+  const pct = Math.min(100, Math.round((m.read.length / m.total) * 100));
+  document.getElementById('detail-count').textContent = `${m.read.length} از ${m.total} چپتر خوانده شده`;
+  document.getElementById('detail-percent').textContent = `${pct}%`;
+  document.getElementById('detail-bar').style.width = `${pct}%`;
+  const lastRead = m.read.length ? Math.max(...m.read) : 0;
+  document.getElementById('detail-last').textContent = lastRead ? `آخرین چپتر خوانده‌شده: ${lastRead}` : 'هنوز چپتری تیک نخورده است';
+}
+
+function openChapters() {
+  if (activeIndex === null) return;
+  showView('chapters');
+}
+
+function renderChapters() {
+  const m = data[activeIndex];
+  if (!m) return showView('list');
+  document.getElementById('chapters-title').textContent = m.title;
   currentSet = new Set(m.read);
   updateCounter();
 
   let html = '';
   for (let i = 1; i <= m.total; i++) {
-    html += `<div class="chip ${currentSet.has(i) ? 'on' : ''}" data-ch="${i}">${i}</div>`;
+    html += `<div class="chip ${currentSet.has(i) ? 'on' : ''}" id="chapter-${i}" data-ch="${i}">${i}</div>`;
   }
   document.getElementById('chips-container').innerHTML = html;
+  const targetChapter = m.read.length ? Math.max(...m.read) : 1;
+  requestAnimationFrame(() => document.getElementById(`chapter-${targetChapter}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
 }
 
 function updateCounter() {
@@ -269,6 +416,7 @@ chipsContainer.addEventListener('click', (e) => {
   updateCounter();
   data[activeIndex].read = Array.from(currentSet).sort((a, b) => a - b);
   save();
+  renderInfo();
 });
 
 /* =========================================
@@ -299,7 +447,7 @@ window.saveAdd = (e) => {
   for (let i = 1; i <= readTo; i++) read.push(i);
 
   if (title && total > 0) {
-    data.push({ title, total, read });
+    data.push({ id: createId(), title, total, read, cover: null });
     save();
     renderList();
     appModal.close();
@@ -337,7 +485,7 @@ window.saveEdit = (e) => {
   for (let i = 1; i <= readTo; i++) m.read.push(i);
 
   save();
-  renderDetails();
+  renderInfo();
   appModal.close();
 };
 
@@ -352,9 +500,10 @@ function askDelete(idx) {
 }
 
 window.confirmDelete = (idx) => {
+  if (nativeStorage && data[idx]?.id) AndroidStorage.deleteCover(data[idx].id);
   data.splice(idx, 1);
   save();
-  renderList();
+  showView('list');
   appModal.close();
 };
 
@@ -363,8 +512,21 @@ window.confirmDelete = (idx) => {
 ========================================= */
 const toggleMenu = (open) => document.body.classList.toggle('menu-open', open);
 
+window.handleNativeBack = () => {
+  if (appModal.open) { appModal.close(); return true; }
+  if (document.body.classList.contains('menu-open')) { toggleMenu(false); return true; }
+  if (!document.getElementById('view-chapters').classList.contains('hidden')) { showView('info'); return true; }
+  if (!document.getElementById('view-info').classList.contains('hidden')) { showView('list'); return true; }
+  return false;
+};
+
 document.getElementById('btn-menu').onclick = () => toggleMenu(true);
 document.getElementById('backdrop').onclick = () => toggleMenu(false);
+document.getElementById('btn-info-back').onclick = () => showView('list');
+document.getElementById('btn-open-chapters').onclick = openChapters;
+document.getElementById('btn-chapters-back').onclick = () => showView('info');
+document.getElementById('btn-change-cover').onclick = () => chooseCover(activeIndex);
+document.getElementById('btn-delete-manhwa').onclick = () => askDelete(activeIndex);
 
 let touchStartX = 0;
 document.addEventListener('touchstart', (e) => {
@@ -402,17 +564,19 @@ document.getElementById('btn-storage').onclick = () => {
 };
 
 window.onAndroidFolderPicked = (serialized, folderName) => {
-  if (serialized) data = JSON.parse(serialized);
-  else save();
+  if (serialized) {
+    const saved = JSON.parse(serialized);
+    needsMigration = false;
+    data = (Array.isArray(saved) ? saved : []).map(normalizeManhwa);
+  }
   localStorage.setItem(KEY, JSON.stringify(data));
+  save();
   document.getElementById('storage-status').textContent = `پوشهٔ ذخیره‌سازی: ${folderName}`;
   renderList();
 };
 window.onAndroidStorageReady = (folderName) => {
   if (folderName) document.getElementById('storage-status').textContent = `پوشهٔ ذخیره‌سازی: ${folderName}`;
 };
-
-document.getElementById('btn-back').onclick = () => showView('list');
 
 // اجرای اولیه
 showView('list');

@@ -44,8 +44,8 @@ android {
         applicationId = "com.manhwatracker.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "2.1.0"
     }
 
     signingConfigs {
@@ -83,6 +83,7 @@ androidComponents {
 
 dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.webkit:webkit:1.17.1")
 }
