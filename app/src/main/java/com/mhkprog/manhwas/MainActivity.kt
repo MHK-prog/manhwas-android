@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.media.ExifInterface
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -68,6 +69,9 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
@@ -79,15 +83,22 @@ class MainActivity : ComponentActivity() {
             .build()
         webView = WebView(this)
         webView.setBackgroundColor(Color.rgb(18, 18, 18))
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(18, 18, 18))
+            addView(webView, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val safe = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             insets
         }
-        setContentView(webView)
-        ViewCompat.requestApplyInsets(webView)
+        setContentView(root)
+        ViewCompat.requestApplyInsets(root)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.allowFileAccess = false
