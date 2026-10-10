@@ -83,7 +83,7 @@ androidComponents {
 
 dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
-    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.webkit:webkit:1.17.1")
 }
