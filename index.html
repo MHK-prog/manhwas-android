@@ -22,7 +22,18 @@
     --border: #333; --primary: #bb86fc; --danger: #cf6679;
     --backdrop: rgba(0,0,0,0.7);
   }
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button { transition: transform .12s ease, filter .12s ease; }
+  button:active:not(:disabled) { transform: scale(.97); filter: brightness(.9); }
+  html, body, * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overscroll-behavior: none;
+  }
+  *::-webkit-scrollbar { display: none; width: 0; height: 0; }
   button, input, dialog { font-family: inherit; }
   html { height: 100%; }
   body {
@@ -31,7 +42,11 @@
     min-height: 100%; min-height: 100dvh; margin: 0;
     display: flex; flex-direction: column;
     overflow-x: hidden;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
+  input, textarea { -webkit-user-select: text; user-select: text; }
   .hidden { display: none !important; }
   .content { flex: 1; min-width: 0; padding: 16px; }
 

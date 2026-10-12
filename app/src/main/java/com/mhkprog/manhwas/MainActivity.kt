@@ -18,6 +18,7 @@ import android.webkit.WebViewClient
 import android.webkit.WebResourceResponse
 import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
@@ -83,6 +84,9 @@ class MainActivity : ComponentActivity() {
             .build()
         webView = WebView(this)
         webView.setBackgroundColor(Color.rgb(18, 18, 18))
+        webView.isVerticalScrollBarEnabled = false
+        webView.isHorizontalScrollBarEnabled = false
+        webView.overScrollMode = android.view.View.OVER_SCROLL_NEVER
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(18, 18, 18))
             addView(webView, FrameLayout.LayoutParams(
@@ -99,6 +103,24 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(root)
         ViewCompat.requestApplyInsets(root)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            private var dispatching = false
+
+            override fun handleOnBackPressed() {
+                if (dispatching) return
+                dispatching = true
+                webView.evaluateJavascript(
+                    "window.handleNativeBack ? window.handleNativeBack() : false"
+                ) { handled ->
+                    dispatching = false
+                    if (handled != "true") {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                }
+            }
+        })
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.allowFileAccess = false
@@ -248,10 +270,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Deprecated("Deprecated in Android")
-    override fun onBackPressed() {
-        webView.evaluateJavascript("window.handleNativeBack ? window.handleNativeBack() : false", { handled ->
-            if (handled != "true") super.onBackPressed()
-        })
-    }
 }
