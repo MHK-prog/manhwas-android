@@ -1,6 +1,6 @@
 {
-  "name": "مانهواهام",
-  "short_name": "مانهوا",
+  "name": "پیگیری مطالعه",
+  "short_name": "مطالعه",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

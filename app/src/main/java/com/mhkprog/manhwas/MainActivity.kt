@@ -242,7 +242,7 @@ class MainActivity : ComponentActivity() {
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "application/json"
-                putExtra(Intent.EXTRA_TITLE, "manhwas-backup.json")
+                putExtra(Intent.EXTRA_TITLE, "reading-backup.json")
             }
             exportPicker.launch(intent)
         }

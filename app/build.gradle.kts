@@ -24,7 +24,10 @@ abstract class CopyWebAssetsTask : DefaultTask() {
         val destination = outputDirectory.get().dir("www").asFile
         destination.mkdirs()
         sourceFiles.files.forEach { source ->
-            source.copyTo(destination.resolve(source.name), overwrite = true)
+            val relativePath = project.rootProject.projectDir.toPath().relativize(source.toPath()).toString()
+            val target = destination.resolve(relativePath)
+            target.parentFile.mkdirs()
+            source.copyTo(target, overwrite = true)
         }
     }
 }
@@ -44,8 +47,8 @@ android {
         applicationId = "com.manhwatracker.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "2.2.0"
+        versionCode = 5
+        versionName = "2.3.0"
     }
 
     signingConfigs {
@@ -75,6 +78,8 @@ androidComponents {
                 rootProject.file("index.html"),
                 rootProject.file("manifest.webmanifest"),
                 rootProject.file("sw.js"),
+                rootProject.fileTree("icons") { include("**/*.svg", "**/*.png") },
+                rootProject.fileTree("fonts") { include("**/*.woff2", "OFL.txt") },
             )
         }
         variant.sources.assets?.addGeneratedSourceDirectory(copyWebAssets) { it.outputDirectory }

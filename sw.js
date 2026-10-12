@@ -1,10 +1,17 @@
-const CACHE_NAME = "manhwa-app-v2";
+const CACHE_NAME = "manhwa-app-v3";
 const ASSETS = [
  './',
  './index.html',
  './manifest.webmanifest',
  './icons/icon-192.png',
- './icons/icon-512.png'
+ './icons/icon-512.png',
+ './icons/menu.svg',
+ './icons/plus.svg',
+ './icons/trash.svg',
+ './icons/edit.svg',
+ './icons/arrow-right.svg',
+ './icons/book.svg',
+ './fonts/Vazirmatn-Variable.woff2'
 ];
 
 
