@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
 import android.media.ExifInterface
+import android.util.Log
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.webkit.JavascriptInterface
@@ -169,8 +170,13 @@ class MainActivity : ComponentActivity() {
         var folder = root.findFile(".manhwas-covers")
         if (folder == null && create) folder = root.createDirectory(".manhwas-covers")
         if (folder != null && create && folder.findFile(".nomedia") == null) {
-            folder.createFile("application/octet-stream", ".nomedia")
-                ?: throw IllegalStateException("Could not hide cover folder from media galleries")
+            try {
+                if (folder.createFile("application/octet-stream", ".nomedia") == null) {
+                    Log.w("Manhwas", "The selected storage provider did not create .nomedia; cover folder is dot-prefixed")
+                }
+            } catch (error: Exception) {
+                Log.w("Manhwas", "Could not create optional .nomedia marker", error)
+            }
         }
         return folder
     }
@@ -193,9 +199,11 @@ class MainActivity : ComponentActivity() {
         io.execute {
             var decoded: Bitmap? = null
             var oriented: Bitmap? = null
+            var stage = "folder"
             try {
                 val tree = folderUri() ?: throw IllegalStateException("Storage folder not selected")
                 val folder = coverFolder(tree, create = true) ?: throw IllegalStateException("Could not create cover folder")
+                stage = "image"
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 contentResolver.openInputStream(sourceUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
                     ?: throw IllegalStateException("Could not read selected image")
@@ -220,15 +228,29 @@ class MainActivity : ComponentActivity() {
                     decoded!!, 0, 0, decoded!!.width, decoded!!.height, Matrix().apply { postRotate(degrees) }, true
                 )
 
+                stage = "write"
                 val name = "cover-$id.jpg"
-                folder.findFile(name)?.delete()
-                val destination = folder.createFile("image/jpeg", name) ?: throw IllegalStateException("Could not create cover file")
+                val destination = folder.findFile(name)
+                    ?: folder.createFile("image/jpeg", name)
+                    ?: throw IllegalStateException("Could not create cover file")
                 contentResolver.openOutputStream(destination.uri, "wt")?.use { output ->
                     if (!oriented!!.compress(Bitmap.CompressFormat.JPEG, 84, output)) throw IllegalStateException("Could not save cover")
                 } ?: throw IllegalStateException("Could not open cover file")
                 runOnUiThread { webView.evaluateJavascript("window.onAndroidCoverSaved(${JSONObject.quote(id)})", null) }
-            } catch (_: Exception) {
-                runOnUiThread { webView.evaluateJavascript("window.onAndroidCoverError(${JSONObject.quote(id)})", null) }
+            } catch (error: Exception) {
+                Log.e("Manhwas", "Failed to save cover during $stage", error)
+                val message = when {
+                    error is SecurityException -> "اجازهٔ نوشتن در پوشهٔ ذخیره معتبر نیست؛ پوشه را دوباره انتخاب کن."
+                    stage == "folder" -> "ساخت پوشهٔ جلد در محل انتخابی ممکن نشد؛ یک پوشهٔ عادی و قابل‌نوشتن انتخاب کن."
+                    stage == "image" -> "خواندن یا پردازش این تصویر ممکن نشد؛ تصویر دیگری انتخاب کن."
+                    else -> "نوشتن جلد در پوشهٔ انتخابی ممکن نشد؛ دسترسی پوشه و فضای خالی را بررسی کن."
+                }
+                runOnUiThread {
+                    webView.evaluateJavascript(
+                        "window.onAndroidCoverError(${JSONObject.quote(id)}, ${JSONObject.quote(message)})",
+                        null,
+                    )
+                }
             } finally {
                 if (oriented !== decoded) oriented?.recycle()
                 decoded?.recycle()

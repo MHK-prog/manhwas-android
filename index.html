@@ -406,7 +406,7 @@ window.onAndroidCoverSaved = (id) => {
   renderList();
   renderEditCoverPreview(index);
 };
-window.onAndroidCoverError = () => alert('ذخیرهٔ جلد انجام نشد. پوشهٔ انتخاب‌شده را بررسی کن.');
+window.onAndroidCoverError = (_id, message) => alert(message || 'ذخیرهٔ جلد انجام نشد. پوشهٔ انتخاب‌شده را بررسی کن.');
 
 function openChapters() {
   if (activeIndex === null) return;
