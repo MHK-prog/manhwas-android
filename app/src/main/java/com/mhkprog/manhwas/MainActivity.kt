@@ -205,8 +205,9 @@ class MainActivity : ComponentActivity() {
                 val folder = coverFolder(tree, create = true) ?: throw IllegalStateException("Could not create cover folder")
                 stage = "image"
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                contentResolver.openInputStream(sourceUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                    ?: throw IllegalStateException("Could not read selected image")
+                val boundsInput = contentResolver.openInputStream(sourceUri)
+                    ?: throw IllegalStateException("Could not open selected image")
+                boundsInput.use { BitmapFactory.decodeStream(it, null, bounds) }
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalArgumentException("Invalid image")
 
                 var sample = 1
