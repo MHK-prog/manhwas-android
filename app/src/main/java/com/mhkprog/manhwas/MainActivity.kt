@@ -272,6 +272,15 @@ class MainActivity : ComponentActivity() {
     inner class AndroidStorage {
         @JavascriptInterface fun loadData(): String? = folderUri()?.let(::readData)
         @JavascriptInterface fun saveData(json: String) { writeData(json) }
+        @JavascriptInterface fun setSystemTheme(light: Boolean) = runOnUiThread {
+            val color = if (light) Color.rgb(245, 246, 250) else Color.rgb(18, 18, 18)
+            webView.setBackgroundColor(color)
+            (webView.parent as? FrameLayout)?.setBackgroundColor(color)
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
+            }
+        }
         @JavascriptInterface fun chooseFolder() = runOnUiThread {
             folderPicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
         }

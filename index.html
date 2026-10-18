@@ -20,8 +20,21 @@
   :root {
     --bg: #121212; --surface: #1e1e1e; --text: #eee; --sub-text: #aaa;
     --border: #333; --primary: #bb86fc; --danger: #cf6679;
+    --muted-surface: #2a2a2a; --selected-surface: #251d2e; --on-primary: #17131d;
     --backdrop: rgba(0,0,0,0.7);
   }
+  :root[data-theme="light"] {
+    --bg: #f5f6fa; --surface: #fff; --text: #1c1b1f; --sub-text: #625f68;
+    --border: #dedce4; --danger: #b3261e; --muted-surface: #eceaf0;
+    --selected-surface: #f0e8fa; --backdrop: rgba(26,20,36,.32);
+  }
+  :root[data-accent="red"] { --primary: #d32f2f; --on-primary: #fff; }
+  :root[data-accent="orange"] { --primary: #e65100; --on-primary: #fff; }
+  :root[data-accent="yellow"] { --primary: #f9a825; --on-primary: #17131d; }
+  :root[data-accent="green"] { --primary: #388e3c; --on-primary: #fff; }
+  :root[data-accent="blue"] { --primary: #1976d2; --on-primary: #fff; }
+  :root[data-accent="indigo"] { --primary: #3949ab; --on-primary: #fff; }
+  :root[data-accent="violet"] { --primary: #bb86fc; --on-primary: #17131d; }
   * {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
@@ -62,6 +75,17 @@
     cursor: pointer; touch-action: manipulation;
   }
   .toolbar-icon img { width: 23px; height: 23px; }
+  .toolbar-icon img, .back-icon-btn img { display: none; }
+  .toolbar-icon::before, .back-icon-btn::before {
+    content: ""; display: block; width: 23px; height: 23px; background: var(--primary);
+    mask: var(--button-icon) center / contain no-repeat;
+    -webkit-mask: var(--button-icon) center / contain no-repeat;
+  }
+  #btn-menu { --button-icon: url("./icons/menu.svg"); }
+  #btn-open-add { --button-icon: url("./icons/plus.svg"); }
+  #btn-delete-selected { --button-icon: url("./icons/trash.svg"); }
+  #btn-edit-selected { --button-icon: url("./icons/edit.svg"); }
+  #btn-chapters-back, #btn-settings-back { --button-icon: url("./icons/arrow-right.svg"); }
   .toolbar-icon:disabled { opacity: .32; cursor: default; }
   .back-icon-btn {
     display: grid; place-items: center; width: 48px; height: 48px; padding: 0;
@@ -69,12 +93,13 @@
     cursor: pointer; touch-action: manipulation;
   }
   .back-icon-btn img { width: 24px; height: 24px; }
+  .back-icon-btn::before { width: 24px; height: 24px; }
   .btn {
     padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text); cursor: pointer;
     font: inherit; touch-action: manipulation;
   }
-  .btn-primary { background: var(--primary); color: #121212; font-weight: bold; border: 0; }
+  .btn-primary { background: var(--primary); color: var(--on-primary); font-weight: bold; border: 0; }
   .icon-btn {
     width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text); cursor: pointer;
@@ -92,7 +117,7 @@
     transition: border-color .15s ease, background .15s ease, transform .12s ease;
   }
   .manhwa-card:active { transform: scale(.99); }
-  .manhwa-card.selected { padding: 11px; border: 2px solid var(--primary); background: #251d2e; }
+  .manhwa-card.selected { padding: 11px; border: 2px solid var(--primary); background: var(--selected-surface); }
   .manhwa-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .manhwa-card-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .cover-frame {
@@ -120,7 +145,7 @@
   .cover-viewer img { display: block; max-width: 100%; max-height: 70dvh; object-fit: contain; border-radius: 8px; }
 
   /* نوار پیشرفت در صفحه لیست */
-  .bar-bg { height: 6px; background: #2a2a2a; border-radius: 99px; margin-top: 8px; overflow: hidden; }
+  .bar-bg { height: 6px; background: var(--muted-surface); border-radius: 99px; margin-top: 8px; overflow: hidden; }
   .bar-fill { height: 100%; background: var(--primary); transition: width 0.2s ease; }
 
   /* چیپ‌ها (چپترها) */
@@ -134,7 +159,26 @@
     padding: 12px 6px; text-align: center; font-size: 0.9rem; cursor: pointer;
     touch-action: pan-y; /* اسکرول عمودی بدون مشکل کار می‌کنه */
   }
-  .chip.on { background: var(--primary); color: #121212; font-weight: bold; border-color: var(--primary); }
+  .chip.on { background: var(--primary); color: var(--on-primary); font-weight: bold; border-color: var(--primary); }
+
+  .settings-header { justify-content: space-between; }
+  .settings-header h2 { margin: 0; font-size: 1.1rem; }
+  .settings-header-spacer { width: 48px; }
+  .settings-section { margin: 0 0 14px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+  .settings-section h3 { margin: 0; font-size: 1rem; }
+  .settings-section p { margin: 5px 0 0; color: var(--sub-text); font-size: .83rem; line-height: 1.7; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .setting-copy { min-width: 0; }
+  .mode-toggle { display: inline-flex; align-items: center; gap: 10px; padding: 8px 0 8px 8px; border: 0; background: transparent; color: var(--text); font: inherit; cursor: pointer; touch-action: manipulation; }
+  .switch-track { width: 48px; height: 28px; padding: 3px; border: 1px solid var(--border); border-radius: 99px; background: var(--muted-surface); transition: background .18s ease, border-color .18s ease; }
+  .switch-thumb { display: block; width: 20px; height: 20px; border-radius: 50%; background: var(--sub-text); transition: transform .18s ease, background .18s ease; }
+  .mode-toggle[aria-checked="true"] .switch-track { border-color: var(--primary); background: var(--primary); }
+  .mode-toggle[aria-checked="true"] .switch-thumb { transform: translateX(-20px); background: var(--on-primary); }
+  .accent-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+  .accent-option { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 76px; padding: 8px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text); font: inherit; font-size: .78rem; cursor: pointer; touch-action: manipulation; }
+  .accent-option[aria-pressed="true"] { border: 2px solid var(--primary); padding: 7px 3px; background: var(--selected-surface); }
+  .accent-swatch { width: 24px; height: 24px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .accent-option[aria-pressed="true"] .accent-swatch { outline: 2px solid var(--primary); outline-offset: 2px; }
 
   /* مودال‌ها */
   dialog {
@@ -181,6 +225,7 @@
     <h3 style="margin-top:0;">منو برنامه</h3>
     <button class="btn side-btn" id="btn-library-main">فهرست اصلی</button>
     <button class="btn side-btn" id="btn-library-hidden">کتابخانهٔ مخفی</button>
+    <button class="btn side-btn" id="btn-settings">تنظیمات</button>
     <button class="btn side-btn" id="btn-storage">انتخاب پوشهٔ ذخیره‌سازی</button>
     <button class="btn side-btn" id="btn-export">پشتیبان‌گیری از اطلاعات</button>
     <p id="storage-status" style="font-size:0.8rem; color:var(--sub-text); line-height:1.6; margin:0;">تا انتخاب پوشه، اطلاعات در حافظهٔ برنامه ذخیره می‌شوند.</p>
@@ -230,9 +275,42 @@
       <h2 id="chapters-title" style="margin:0 0 6px;"></h2>
       <div id="chips-container" class="chips"></div>
     </div>
+
+    <div id="view-settings" class="hidden">
+      <div class="header settings-header">
+        <button class="back-icon-btn" id="btn-settings-back" aria-label="بازگشت به فهرست">
+          <img src="./icons/arrow-right.svg" alt="">
+        </button>
+        <h2>تنظیمات</h2>
+        <span class="settings-header-spacer" aria-hidden="true"></span>
+      </div>
+      <section class="settings-section setting-row" aria-labelledby="theme-setting-title">
+        <div class="setting-copy">
+          <h3 id="theme-setting-title">حالت نمایش</h3>
+          <p>روشن یا تیره</p>
+        </div>
+        <button class="mode-toggle" id="btn-theme-mode" type="button" role="switch" aria-checked="false" aria-label="تغییر حالت روشن یا تیره">
+          <span id="theme-mode-label">تیره</span>
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+        </button>
+      </section>
+      <section class="settings-section" aria-labelledby="accent-setting-title">
+        <h3 id="accent-setting-title">رنگ اصلی</h3>
+        <p>یکی از رنگ‌های رنگین‌کمان را انتخاب کن.</p>
+        <div class="accent-options" id="accent-options">
+          <button class="accent-option" type="button" data-accent-option="red" aria-label="رنگ قرمز" aria-pressed="false"><span class="accent-swatch" style="--swatch:#d32f2f"></span><span>قرمز</span></button>
+          <button class="accent-option" type="button" data-accent-option="orange" aria-label="رنگ نارنجی" aria-pressed="false"><span class="accent-swatch" style="--swatch:#e65100"></span><span>نارنجی</span></button>
+          <button class="accent-option" type="button" data-accent-option="yellow" aria-label="رنگ زرد" aria-pressed="false"><span class="accent-swatch" style="--swatch:#f9a825"></span><span>زرد</span></button>
+          <button class="accent-option" type="button" data-accent-option="green" aria-label="رنگ سبز" aria-pressed="false"><span class="accent-swatch" style="--swatch:#388e3c"></span><span>سبز</span></button>
+          <button class="accent-option" type="button" data-accent-option="blue" aria-label="رنگ آبی" aria-pressed="false"><span class="accent-swatch" style="--swatch:#1976d2"></span><span>آبی</span></button>
+          <button class="accent-option" type="button" data-accent-option="indigo" aria-label="رنگ نیلی" aria-pressed="false"><span class="accent-swatch" style="--swatch:#3949ab"></span><span>نیلی</span></button>
+          <button class="accent-option" type="button" data-accent-option="violet" aria-label="رنگ بنفش" aria-pressed="false"><span class="accent-swatch" style="--swatch:#bb86fc"></span><span>بنفش</span></button>
+        </div>
+      </section>
+    </div>
   </div>
 
-  <footer>v2.4.0</footer>
+  <footer>v2.5.0</footer>
 
   <!-- مودال چندمنظوره و سراسری -->
   <dialog id="app-modal">
@@ -245,6 +323,14 @@
 
 <script>
 const KEY = 'manhwas';
+const THEME_KEY = 'reading-theme-settings';
+const ACCENT_KEYS = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
+let themeSettings = { mode: 'dark', accent: 'violet' };
+try {
+  const storedTheme = JSON.parse(localStorage.getItem(THEME_KEY) || '{}');
+  if (storedTheme.mode === 'light' || storedTheme.mode === 'dark') themeSettings.mode = storedTheme.mode;
+  if (ACCENT_KEYS.includes(storedTheme.accent)) themeSettings.accent = storedTheme.accent;
+} catch (_) {}
 let nativeStorage = typeof AndroidStorage !== 'undefined';
 const createId = () => `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 let loadedData = JSON.parse((nativeStorage && AndroidStorage.loadData()) || localStorage.getItem(KEY) || '[]');
@@ -282,6 +368,27 @@ const save = () => {
   localStorage.setItem(KEY, serialized);
   if (nativeStorage) AndroidStorage.saveData(serialized);
 };
+function renderThemeSettings() {
+  const isLight = themeSettings.mode === 'light';
+  const root = document.documentElement;
+  root.dataset.theme = themeSettings.mode;
+  root.dataset.accent = themeSettings.accent;
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) metaTheme.content = isLight ? '#f5f6fa' : '#121212';
+  const toggle = document.getElementById('btn-theme-mode');
+  if (toggle) {
+    toggle.setAttribute('aria-checked', String(isLight));
+    document.getElementById('theme-mode-label').textContent = isLight ? 'روشن' : 'تیره';
+  }
+  document.querySelectorAll('.accent-option').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.accentOption === themeSettings.accent));
+  });
+  if (nativeStorage && typeof AndroidStorage.setSystemTheme === 'function') AndroidStorage.setSystemTheme(isLight);
+}
+function saveThemeSettings() {
+  localStorage.setItem(THEME_KEY, JSON.stringify(themeSettings));
+  renderThemeSettings();
+}
 if (needsMigration) save();
 
 function getCoverUrl(m) {
@@ -321,6 +428,7 @@ function openModal(title, contentHtml) {
 function showView(view) {
   document.getElementById('view-list').classList.toggle('hidden', view !== 'list');
   document.getElementById('view-chapters').classList.toggle('hidden', view !== 'chapters');
+  document.getElementById('view-settings').classList.toggle('hidden', view !== 'settings');
   if (view === 'list') { activeIndex = null; renderList(); }
   if (view === 'chapters') renderChapters();
 }
@@ -379,6 +487,7 @@ function updateToolbar() {
   const restoring = listMode === 'hidden';
   visibilityButton.setAttribute('aria-label', restoring ? 'بازگرداندن موارد انتخاب‌شده' : 'مخفی کردن موارد انتخاب‌شده');
   visibilityIcon.src = restoring ? './icons/eye.svg' : './icons/eye-off.svg';
+  visibilityButton.style.setProperty('--button-icon', `url("./icons/${restoring ? 'eye.svg' : 'eye-off.svg'}")`);
   document.querySelectorAll('.manhwa-card').forEach((card) => {
     const selected = selectedIds.has(card.dataset.id);
     card.classList.toggle('selected', selected);
@@ -631,6 +740,7 @@ const toggleMenu = (open) => document.body.classList.toggle('menu-open', open);
 window.handleNativeBack = () => {
   if (appModal.open) { appModal.close(); return true; }
   if (document.body.classList.contains('menu-open')) { toggleMenu(false); return true; }
+  if (!document.getElementById('view-settings').classList.contains('hidden')) { showView('list'); return true; }
   if (!document.getElementById('view-chapters').classList.contains('hidden')) { showView('list'); return true; }
   if (selectedIds.size) { selectedIds.clear(); updateToolbar(); return true; }
   if (listMode === 'hidden') { showLibrary('main'); return true; }
@@ -726,6 +836,18 @@ document.getElementById('btn-edit-selected').onclick = () => {
 };
 document.getElementById('btn-library-main').onclick = () => showLibrary('main');
 document.getElementById('btn-library-hidden').onclick = () => showLibrary('hidden');
+document.getElementById('btn-settings').onclick = () => { toggleMenu(false); showView('settings'); };
+document.getElementById('btn-settings-back').onclick = () => showView('list');
+document.getElementById('btn-theme-mode').onclick = () => {
+  themeSettings.mode = themeSettings.mode === 'dark' ? 'light' : 'dark';
+  saveThemeSettings();
+};
+document.querySelectorAll('.accent-option').forEach((button) => {
+  button.onclick = () => {
+    themeSettings.accent = button.dataset.accentOption;
+    saveThemeSettings();
+  };
+});
 document.getElementById('backdrop').onclick = () => toggleMenu(false);
 document.getElementById('btn-chapters-back').onclick = () => showView('list');
 
@@ -780,6 +902,7 @@ window.onAndroidStorageReady = (folderName) => {
 };
 
 // اجرای اولیه
+renderThemeSettings();
 showView('list');
 </script>
 <script>
