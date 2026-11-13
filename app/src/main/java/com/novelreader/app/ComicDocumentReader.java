@@ -173,7 +173,7 @@ final class ComicDocumentReader implements AutoCloseable {
         IOException failure = null;
         if (pdfRenderer != null) {
             try { pdfRenderer.close(); }
-            catch (IOException error) { failure = error; }
+            catch (RuntimeException error) { failure = new IOException("Could not close PDF renderer.", error); }
         }
         if (descriptor != null) {
             try { descriptor.close(); }
