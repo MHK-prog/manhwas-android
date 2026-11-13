@@ -642,7 +642,6 @@ public final class MainActivity extends Activity {
         rebuildRecommendationWeights();
         persistRecommendationState();
         showDashboard();
-        showResumePromptOnce();
     }
 
     private static int coverCacheBudgetKb() {
@@ -4224,6 +4223,14 @@ public final class MainActivity extends Activity {
         TextView view = new TextView(this); view.setText(value); view.setTextSize(sp); view.setTextColor(color);
         view.setTypeface(vazir == null ? Typeface.DEFAULT : vazir); view.setGravity(Gravity.CENTER_VERTICAL);
         view.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG); view.setLayoutDirection(View.LAYOUT_DIRECTION_LOCALE); return view;
+    }
+
+    private void setRtlTextAlignment(TextView view) {
+        view.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        int vertical = view.getGravity() & Gravity.VERTICAL_GRAVITY_MASK;
+        view.setGravity(Gravity.RIGHT | (vertical == 0 ? Gravity.CENTER_VERTICAL : vertical));
+        view.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);
+        view.setTextDirection(View.TEXT_DIRECTION_RTL);
     }
 
     private EditText edit(String hint, boolean multiline) {
