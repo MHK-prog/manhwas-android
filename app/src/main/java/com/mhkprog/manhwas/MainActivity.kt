@@ -32,6 +32,8 @@ import java.util.ArrayList
 import java.util.HashSet
 import org.json.JSONObject
 import org.json.JSONArray
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
@@ -67,6 +69,41 @@ class MainActivity : ComponentActivity() {
         pendingExport = null
         if (result.resultCode == Activity.RESULT_OK && value != null) {
             result.data?.data?.let { uri -> contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { it.write(value) } }
+        }
+    }
+
+    private val jsonImportPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+        val uri = result.data?.data ?: return@registerForActivityResult
+        io.execute {
+            try {
+                val json = contentResolver.openInputStream(uri)?.use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var size = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        size += count
+                        if (size > 5 * 1024 * 1024) throw IOException("JSON file is too large")
+                        output.write(buffer, 0, count)
+                    }
+                    String(output.toByteArray(), Charsets.UTF_8)
+                } ?: throw IOException("Could not open JSON file")
+                runOnUiThread {
+                    webView.evaluateJavascript(
+                        "window.onAndroidJsonImported(${JSONObject.quote(json)}, null)",
+                        null,
+                    )
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    webView.evaluateJavascript(
+                        "window.onAndroidJsonImported(null, ${JSONObject.quote("خواندن فایل ممکن نشد یا اندازهٔ آن بیشتر از ۵ مگابایت است.")})",
+                        null,
+                    )
+                }
+            }
         }
     }
 
@@ -334,6 +371,14 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun chooseFolder() = runOnUiThread {
             folderPicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
         }
+        @JavascriptInterface fun chooseJsonImport() = runOnUiThread {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/json", "text/plain"))
+            }
+            jsonImportPicker.launch(intent)
+        }
         @JavascriptInterface fun chooseCover(id: String) = runOnUiThread {
             if (!id.matches(Regex("[A-Za-z0-9_-]{1,80}"))) return@runOnUiThread
             pendingCoverId = id
@@ -349,6 +394,23 @@ class MainActivity : ComponentActivity() {
                 putExtra(Intent.EXTRA_TITLE, "reading-backup.json")
             }
             exportPicker.launch(intent)
+        }
+        @JavascriptInterface fun exportSampleTemplate() = runOnUiThread {
+            try {
+                pendingExport = assets.open("www/book-import-template.txt").bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TITLE, "book-import-template.txt")
+                }
+                exportPicker.launch(intent)
+            } catch (_: Exception) {
+                pendingExport = null
+                webView.evaluateJavascript(
+                    "window.onAndroidSampleExportError(${JSONObject.quote("خواندن فایل نمونه ممکن نشد.")})",
+                    null,
+                )
+            }
         }
     }
 

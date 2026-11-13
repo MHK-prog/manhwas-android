@@ -224,6 +224,7 @@
   }
   .sidebar {
     position: fixed; top: 0; right: 0; height: 100%; width: min(300px, 84vw);
+    max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain;
     background: var(--surface); border-left: 1px solid var(--border);
     transform: translateX(100%); transition: transform 0.2s ease;
     padding: 20px 16px; display: flex; flex-direction: column; gap: 12px; z-index: 11;
@@ -246,6 +247,8 @@
     <button class="btn side-btn" id="btn-recommendations">پیشنهاد مطالعه</button>
     <button class="btn side-btn" id="btn-settings">تنظیمات</button>
     <button class="btn side-btn" id="btn-storage">انتخاب پوشهٔ ذخیره‌سازی</button>
+    <button class="btn side-btn" id="btn-import-json">وارد کردن اطلاعات از JSON</button>
+    <button class="btn side-btn" id="btn-sample-template">گرفتن قالب TXT برای هوش مصنوعی</button>
     <button class="btn side-btn" id="btn-export">پشتیبان‌گیری از اطلاعات</button>
     <p id="storage-status" style="font-size:0.8rem; color:var(--sub-text); line-height:1.6; margin:0;">تا انتخاب پوشه، اطلاعات در حافظهٔ برنامه ذخیره می‌شوند.</p>
     <span style="font-size:0.8rem; color:var(--sub-text); margin-top:auto; line-height:1.6;">
@@ -254,6 +257,7 @@
   </aside>
 
   <input type="file" id="cover-picker" accept="image/*" class="hidden">
+  <input type="file" id="json-picker" accept=".json,application/json,text/json" class="hidden">
 
   <div class="content">
     <!-- فهرست -->
@@ -345,7 +349,7 @@
     </div>
   </div>
 
-  <footer>v2.6.0</footer>
+  <footer>v2.7.0</footer>
 
   <!-- مودال چندمنظوره و سراسری -->
   <dialog id="app-modal">
@@ -361,7 +365,6 @@ const KEY = 'manhwas';
 const THEME_KEY = 'reading-theme-settings';
 const RECOMMENDATION_PREF_KEY = 'reading-recommendation-preferences';
 const RECOMMENDATION_SEEN_KEY = 'reading-recommendation-seen';
-const RECOMMENDATION_LEARNED_KEY = 'reading-recommendation-learned';
 const ACCENT_KEYS = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
 let themeSettings = { mode: 'dark', accent: 'violet' };
 try {
@@ -380,11 +383,7 @@ try {
   const storedSeen = JSON.parse(localStorage.getItem(RECOMMENDATION_SEEN_KEY) || '[]');
   if (Array.isArray(storedSeen)) recommendationSeen = new Set(storedSeen.map(String));
 } catch (_) {}
-let recommendationLearned = new Set();
-try {
-  const storedLearned = JSON.parse(localStorage.getItem(RECOMMENDATION_LEARNED_KEY) || '[]');
-  if (Array.isArray(storedLearned)) recommendationLearned = new Set(storedLearned.map(String));
-} catch (_) {}
+localStorage.removeItem('reading-recommendation-learned');
 let nativeStorage = typeof AndroidStorage !== 'undefined';
 const createId = () => `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 let loadedData = JSON.parse((nativeStorage && AndroidStorage.loadData()) || localStorage.getItem(KEY) || '[]');
@@ -450,11 +449,6 @@ function saveThemeSettings() {
 function saveRecommendationPreferences() {
   localStorage.setItem(RECOMMENDATION_PREF_KEY, JSON.stringify(recommendationPreferences));
 }
-function learnFromProgress(item) {
-  if (!item || item.total < 1 || !item.genres.length || item.read.length / item.total < 0.7 || recommendationLearned.has(item.id)) return;
-  recommendationLearned.add(item.id);
-  localStorage.setItem(RECOMMENDATION_LEARNED_KEY, JSON.stringify([...recommendationLearned]));
-}
 function recommendationGenreWeights() {
   const weights = new Map();
   data.forEach((item) => item.genres.forEach((genre) => {
@@ -469,10 +463,6 @@ function recommendationGenreWeights() {
     if (item.favorite) item.genres.forEach((genre) => {
       const key = genre.trim().toLowerCase();
       if (key && key !== 'other') weights.set(key, 30);
-    });
-    if (recommendationLearned.has(item.id)) item.genres.forEach((genre) => {
-      const key = genre.trim().toLowerCase();
-      if (key && key !== 'other') weights.set(key, Math.min(50, (weights.get(key) || 10) + 2));
     });
   });
   return Object.fromEntries(weights);
@@ -818,7 +808,6 @@ chipsContainer.addEventListener('click', (e) => {
 
   updateCounter();
   data[activeIndex].read = Array.from(currentSet).sort((a, b) => a - b);
-  learnFromProgress(data[activeIndex]);
   save();
   renderList();
 });
@@ -905,8 +894,6 @@ window.saveManhwa = (e) => {
 
   m.read = [];
   for (let i = 1; i <= readTo; i++) m.read.push(i);
-  learnFromProgress(m);
-
   if (modalEntryIsNew) data.push(m);
   modalEntryIsNew = false;
   save();
@@ -1107,6 +1094,117 @@ document.getElementById('btn-export').onclick = () => {
   toggleMenu(false);
 };
 
+function importBooksFromJson(rawJson) {
+  let payload;
+  try {
+    payload = JSON.parse(rawJson);
+  } catch (_) {
+    alert('ساختار فایل JSON معتبر نیست. فایل را با قالب نمونه بساز.');
+    return;
+  }
+
+  const records = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.books) ? payload.books
+    : Array.isArray(payload?.items) ? payload.items
+    : Array.isArray(payload?.manhwas) ? payload.manhwas
+    : payload?.book && typeof payload.book === 'object' ? [payload.book]
+    : payload && typeof payload === 'object' && (payload.title || payload.name) ? [payload]
+    : [];
+  if (!records.length) {
+    alert('در فایل، فهرست کتابی پیدا نشد. از آرایه یا کلید books استفاده کن.');
+    return;
+  }
+
+  const titleKey = (value) => String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+  const existingTitles = new Set(data.map((item) => titleKey(item.title)));
+  const additions = [];
+  let skipped = 0;
+  records.forEach((record) => {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) { skipped++; return; }
+    const title = String(record.title ?? record.name ?? '').trim();
+    const key = titleKey(title);
+    if (!title || existingTitles.has(key)) { skipped++; return; }
+
+    const chapterValue = record.total ?? record.totalChapters ?? record.chapterCount
+      ?? (typeof record.chapters === 'number' || typeof record.chapters === 'string' ? record.chapters : null)
+      ?? (Array.isArray(record.chapters) ? record.chapters.length : null);
+    const total = Number(chapterValue ?? 1);
+    if (!Number.isSafeInteger(total) || total < 1 || total > 100000) { skipped++; return; }
+
+    const sourceGenres = record.genres ?? record.tags ?? [];
+    const genres = [...new Set((Array.isArray(sourceGenres) ? sourceGenres : String(sourceGenres).split(/[,،]/))
+      .map((genre) => String(genre).trim()).filter(Boolean))];
+    const sourceRead = record.read ?? record.readChapters;
+    let read = Array.isArray(sourceRead)
+      ? sourceRead.map(Number).filter((chapter) => Number.isSafeInteger(chapter) && chapter > 0 && chapter <= total)
+      : [];
+    if (!Array.isArray(sourceRead)) {
+      const requestedReadTo = Number(record.readTo ?? record.lastRead) || 0;
+      const readTo = Number.isSafeInteger(requestedReadTo) ? Math.min(total, Math.max(0, requestedReadTo)) : 0;
+      for (let chapter = 1; chapter <= readTo; chapter++) read.push(chapter);
+    }
+    const rawFavorite = record.favorite;
+    const favorite = rawFavorite === true || ['true', 'yes', 'بله'].includes(String(rawFavorite).trim().toLowerCase());
+    additions.push({
+      id: createId(),
+      title,
+      author: String(record.author ?? '').trim(),
+      genres,
+      interestRating: Math.max(0, Math.min(5, Number(record.interestRating ?? record.rating) || 0)),
+      favorite,
+      total,
+      read: [...new Set(read)].sort((a, b) => a - b),
+      cover: null,
+      hidden: false,
+    });
+    existingTitles.add(key);
+  });
+
+  if (additions.length) {
+    data.push(...additions);
+    selectedIds.clear();
+    save();
+    showLibrary('main');
+  }
+  const addedText = additions.length.toLocaleString('fa-IR');
+  const skippedText = skipped.toLocaleString('fa-IR');
+  alert(`${addedText} کتاب اضافه شد. ${skippedText} مورد تکراری یا ناقص نادیده گرفته شد.`);
+}
+
+document.getElementById('btn-import-json').onclick = () => {
+  toggleMenu(false);
+  if (nativeStorage && typeof AndroidStorage.chooseJsonImport === 'function') AndroidStorage.chooseJsonImport();
+  else document.getElementById('json-picker').click();
+};
+document.getElementById('json-picker').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    if (file.size > 5 * 1024 * 1024) throw new Error('large');
+    importBooksFromJson(await file.text());
+  } catch (_) {
+    alert('خواندن فایل ممکن نشد یا اندازهٔ آن بیشتر از ۵ مگابایت است.');
+  }
+});
+window.onAndroidJsonImported = (rawJson, error) => {
+  if (error) { alert(error); return; }
+  if (typeof rawJson === 'string') importBooksFromJson(rawJson);
+};
+
+document.getElementById('btn-sample-template').onclick = () => {
+  toggleMenu(false);
+  if (nativeStorage && typeof AndroidStorage.exportSampleTemplate === 'function') {
+    AndroidStorage.exportSampleTemplate();
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = './book-import-template.txt';
+  link.download = 'book-import-template.txt';
+  link.click();
+};
+window.onAndroidSampleExportError = (message) => alert(message || 'ذخیرهٔ فایل نمونه ممکن نشد.');
+
 document.getElementById('btn-storage').onclick = () => {
   if (nativeStorage) AndroidStorage.chooseFolder();
   else alert('برای انتخاب پوشه، نسخهٔ اندروید را نصب کنید.');
@@ -1128,7 +1226,6 @@ window.onAndroidStorageReady = (folderName) => {
 };
 
 // اجرای اولیه
-data.forEach(learnFromProgress);
 renderThemeSettings();
 showView('list');
 </script>

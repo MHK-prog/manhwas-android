@@ -47,8 +47,8 @@ android {
         applicationId = "com.manhwatracker.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "2.6.0"
+        versionCode = 9
+        versionName = "2.7.0"
     }
 
     signingConfigs {
@@ -78,6 +78,7 @@ androidComponents {
                 rootProject.file("index.html"),
                 rootProject.file("manifest.webmanifest"),
                 rootProject.file("sw.js"),
+                rootProject.file("book-import-template.txt"),
                 rootProject.fileTree("icons") { include("**/*.svg", "**/*.png") },
                 rootProject.fileTree("fonts") { include("**/*.woff2", "OFL.txt") },
             )

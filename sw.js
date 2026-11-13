@@ -1,4 +1,4 @@
-const CACHE_NAME = "manhwa-app-v6";
+const CACHE_NAME = "manhwa-app-v7";
 const ASSETS = [
  './',
  './index.html',
@@ -13,7 +13,8 @@ const ASSETS = [
  './icons/eye.svg',
  './icons/arrow-right.svg',
  './icons/book.svg',
- './fonts/Vazirmatn-Variable.woff2'
+ './fonts/Vazirmatn-Variable.woff2',
+ './book-import-template.txt'
 ];
 
 
