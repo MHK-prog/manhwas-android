@@ -47,8 +47,8 @@ android {
         applicationId = "com.manhwatracker.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "2.5.0"
+        versionCode = 8
+        versionName = "2.6.0"
     }
 
     signingConfigs {

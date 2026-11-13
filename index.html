@@ -47,7 +47,7 @@
     overscroll-behavior: none;
   }
   *::-webkit-scrollbar { display: none; width: 0; height: 0; }
-  button, input, dialog { font-family: inherit; }
+  button, input, select, dialog { font-family: inherit; }
   html { height: 100%; }
   body {
     font-family: "Vazirmatn", sans-serif;
@@ -59,7 +59,7 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  input, textarea { -webkit-user-select: text; user-select: text; }
+  input, textarea, select { -webkit-user-select: text; user-select: text; }
   .hidden { display: none !important; }
   .content { flex: 1; min-width: 0; padding: 16px; }
 
@@ -179,6 +179,22 @@
   .accent-option[aria-pressed="true"] { border: 2px solid var(--primary); padding: 7px 3px; background: var(--selected-surface); }
   .accent-swatch { width: 24px; height: 24px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
   .accent-option[aria-pressed="true"] .accent-swatch { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .recommendation-card { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 440px; margin: 0 auto; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); text-align: center; }
+  .recommend-cover { display: grid; place-items: center; position: relative; width: min(58vw, 220px); height: min(67vw, 284px); min-height: 190px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+  .recommend-cover .cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .recommend-cover .cover-placeholder { width: 48px; height: 48px; }
+  .recommendation-card h3 { margin: 16px 0 4px; font-size: 1.2rem; overflow-wrap: anywhere; }
+  .recommendation-author { margin: 0; color: var(--sub-text); font-size: .9rem; }
+  .recommendation-meta { margin: 12px 0 0; color: var(--sub-text); font-size: .84rem; line-height: 1.8; }
+  .recommendation-actions { display: flex; width: 100%; gap: 9px; margin-top: 18px; }
+  .recommendation-actions .btn { flex: 1; }
+  .recommendation-empty { width: 100%; margin: 24px 0; color: var(--sub-text); text-align: center; line-height: 1.8; }
+  .preference-group { margin-top: 14px; }
+  .preference-group h4 { margin: 0 0 9px; font-size: .9rem; }
+  .preference-options { display: flex; flex-wrap: wrap; gap: 8px; }
+  .preference-chip { padding: 7px 12px; border: 1px solid var(--border); border-radius: 99px; background: var(--bg); color: var(--text); font: inherit; font-size: .82rem; cursor: pointer; }
+  .preference-chip[aria-pressed="true"] { border-color: var(--primary); background: var(--selected-surface); color: var(--primary); }
+  .preference-empty { margin: 6px 0; color: var(--sub-text); font-size: .82rem; }
 
   /* مودال‌ها */
   dialog {
@@ -192,11 +208,13 @@
   .modal-head h3 { margin: 0; }
   .modal-close { background: none; border: 0; color: var(--sub-text); font-size: 1.3rem; cursor: pointer; padding: 4px; }
   form { display: flex; flex-direction: column; gap: 12px; }
-  input {
+  input, select {
     padding: 12px; border: 1px solid var(--border); border-radius: 8px;
     font: inherit; background: var(--bg); color: var(--text); outline: none;
   }
-  input:focus { border-color: var(--primary); }
+  input:focus, select:focus { border-color: var(--primary); }
+  .inline-check { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: .9rem; }
+  .inline-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
 
   /* سایدبار کشویی */
@@ -225,6 +243,7 @@
     <h3 style="margin-top:0;">منو برنامه</h3>
     <button class="btn side-btn" id="btn-library-main">فهرست اصلی</button>
     <button class="btn side-btn" id="btn-library-hidden">کتابخانهٔ مخفی</button>
+    <button class="btn side-btn" id="btn-recommendations">پیشنهاد مطالعه</button>
     <button class="btn side-btn" id="btn-settings">تنظیمات</button>
     <button class="btn side-btn" id="btn-storage">انتخاب پوشهٔ ذخیره‌سازی</button>
     <button class="btn side-btn" id="btn-export">پشتیبان‌گیری از اطلاعات</button>
@@ -307,10 +326,26 @@
           <button class="accent-option" type="button" data-accent-option="violet" aria-label="رنگ بنفش" aria-pressed="false"><span class="accent-swatch" style="--swatch:#bb86fc"></span><span>بنفش</span></button>
         </div>
       </section>
+      <section class="settings-section" aria-labelledby="recommendation-preferences-title">
+        <h3 id="recommendation-preferences-title">سلیقهٔ پیشنهادها</h3>
+        <p>ژانرها و نویسنده‌های محبوبت را انتخاب کن تا در پیشنهادها وزن بیشتری بگیرند.</p>
+        <div id="recommendation-preferences"></div>
+      </section>
+    </div>
+
+    <div id="view-recommendations" class="hidden">
+      <div class="header settings-header">
+        <button class="back-icon-btn" id="btn-recommendations-back" aria-label="بازگشت به فهرست">
+          <img src="./icons/arrow-right.svg" alt="">
+        </button>
+        <h2>پیشنهاد مطالعه</h2>
+        <span class="settings-header-spacer" aria-hidden="true"></span>
+      </div>
+      <div id="recommendation-result"></div>
     </div>
   </div>
 
-  <footer>v2.5.0</footer>
+  <footer>v2.6.0</footer>
 
   <!-- مودال چندمنظوره و سراسری -->
   <dialog id="app-modal">
@@ -324,12 +359,31 @@
 <script>
 const KEY = 'manhwas';
 const THEME_KEY = 'reading-theme-settings';
+const RECOMMENDATION_PREF_KEY = 'reading-recommendation-preferences';
+const RECOMMENDATION_SEEN_KEY = 'reading-recommendation-seen';
+const RECOMMENDATION_LEARNED_KEY = 'reading-recommendation-learned';
 const ACCENT_KEYS = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
 let themeSettings = { mode: 'dark', accent: 'violet' };
 try {
   const storedTheme = JSON.parse(localStorage.getItem(THEME_KEY) || '{}');
   if (storedTheme.mode === 'light' || storedTheme.mode === 'dark') themeSettings.mode = storedTheme.mode;
   if (ACCENT_KEYS.includes(storedTheme.accent)) themeSettings.accent = storedTheme.accent;
+} catch (_) {}
+let recommendationPreferences = { genres: [], authors: [] };
+try {
+  const storedPreferences = JSON.parse(localStorage.getItem(RECOMMENDATION_PREF_KEY) || '{}');
+  recommendationPreferences.genres = Array.isArray(storedPreferences.genres) ? storedPreferences.genres.map(String) : [];
+  recommendationPreferences.authors = Array.isArray(storedPreferences.authors) ? storedPreferences.authors.map(String) : [];
+} catch (_) {}
+let recommendationSeen = new Set();
+try {
+  const storedSeen = JSON.parse(localStorage.getItem(RECOMMENDATION_SEEN_KEY) || '[]');
+  if (Array.isArray(storedSeen)) recommendationSeen = new Set(storedSeen.map(String));
+} catch (_) {}
+let recommendationLearned = new Set();
+try {
+  const storedLearned = JSON.parse(localStorage.getItem(RECOMMENDATION_LEARNED_KEY) || '[]');
+  if (Array.isArray(storedLearned)) recommendationLearned = new Set(storedLearned.map(String));
 } catch (_) {}
 let nativeStorage = typeof AndroidStorage !== 'undefined';
 const createId = () => `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -342,6 +396,10 @@ function normalizeManhwa(item) {
     needsMigration = true;
   }
   m.title = String(m.title || 'بدون نام');
+  m.author = String(m.author || '');
+  m.genres = Array.isArray(m.genres) ? [...new Set(m.genres.map(String).map(value => value.trim()).filter(Boolean))] : [];
+  m.interestRating = Math.max(0, Math.min(5, Number(m.interestRating) || 0));
+  m.favorite = m.favorite === true;
   m.total = Math.max(1, Number(m.total) || 1);
   m.read = Array.isArray(m.read) ? [...new Set(m.read.map(Number).filter(n => Number.isInteger(n) && n > 0 && n <= m.total))].sort((a, b) => a - b) : [];
   if (m.cover !== `cover-${m.id}.jpg`) m.cover = null;
@@ -389,6 +447,36 @@ function saveThemeSettings() {
   localStorage.setItem(THEME_KEY, JSON.stringify(themeSettings));
   renderThemeSettings();
 }
+function saveRecommendationPreferences() {
+  localStorage.setItem(RECOMMENDATION_PREF_KEY, JSON.stringify(recommendationPreferences));
+}
+function learnFromProgress(item) {
+  if (!item || item.total < 1 || !item.genres.length || item.read.length / item.total < 0.7 || recommendationLearned.has(item.id)) return;
+  recommendationLearned.add(item.id);
+  localStorage.setItem(RECOMMENDATION_LEARNED_KEY, JSON.stringify([...recommendationLearned]));
+}
+function recommendationGenreWeights() {
+  const weights = new Map();
+  data.forEach((item) => item.genres.forEach((genre) => {
+    const key = genre.trim().toLowerCase();
+    if (key && key !== 'other' && !weights.has(key)) weights.set(key, 10);
+  }));
+  recommendationPreferences.genres.forEach((genre) => {
+    const key = genre.trim().toLowerCase();
+    if (key) weights.set(key, 30);
+  });
+  data.forEach((item) => {
+    if (item.favorite) item.genres.forEach((genre) => {
+      const key = genre.trim().toLowerCase();
+      if (key && key !== 'other') weights.set(key, 30);
+    });
+    if (recommendationLearned.has(item.id)) item.genres.forEach((genre) => {
+      const key = genre.trim().toLowerCase();
+      if (key && key !== 'other') weights.set(key, Math.min(50, (weights.get(key) || 10) + 2));
+    });
+  });
+  return Object.fromEntries(weights);
+}
 if (needsMigration) save();
 
 function getCoverUrl(m) {
@@ -429,8 +517,10 @@ function showView(view) {
   document.getElementById('view-list').classList.toggle('hidden', view !== 'list');
   document.getElementById('view-chapters').classList.toggle('hidden', view !== 'chapters');
   document.getElementById('view-settings').classList.toggle('hidden', view !== 'settings');
+  document.getElementById('view-recommendations').classList.toggle('hidden', view !== 'recommendations');
   if (view === 'list') { activeIndex = null; renderList(); }
   if (view === 'chapters') renderChapters();
+  if (view === 'settings') renderRecommendationPreferences();
 }
 
 function showLibrary(mode) {
@@ -600,6 +690,113 @@ function updateCounter() {
   document.getElementById('detail-progress').textContent = `${currentSet.size} / ${m.total}`;
 }
 
+function recommendationCandidates() {
+  return data.filter((item) => item.hidden !== true && item.read.length < item.total);
+}
+
+function pickRecommendation(candidates) {
+  if (nativeStorage && typeof AndroidStorage.recommendBook === 'function') {
+    return AndroidStorage.recommendBook(
+      JSON.stringify(candidates),
+      JSON.stringify(recommendationGenreWeights()),
+      JSON.stringify(recommendationPreferences.authors),
+    );
+  }
+  let pool = candidates.filter((item) => !recommendationSeen.has(item.id));
+  if (!pool.length) { recommendationSeen.clear(); pool = candidates; }
+  if (!pool.length) return '';
+  const favoriteAuthors = new Set(recommendationPreferences.authors.map((value) => value.trim().toLowerCase()));
+  const genreWeights = recommendationGenreWeights();
+  const weights = pool.map((item) => {
+    const uniqueGenres = [...new Set(item.genres.map((genre) => genre.trim().toLowerCase()).filter(Boolean))];
+    const genreWeight = uniqueGenres.length
+      ? uniqueGenres.reduce((sum, genre) => sum + (genreWeights[genre] || 10), 0) / uniqueGenres.length
+      : 10;
+    const rating = [0, 0.35, 0.60, 1, 1.5, 2.1][item.interestRating] || 1;
+    const personal = (item.favorite ? 1.12 : 1) * (favoriteAuthors.has(item.author.trim().toLowerCase()) ? 1.12 : 1);
+    return Math.max(0.05, genreWeight * rating * personal);
+  });
+  let selectedIndex = Math.floor(Math.random() * pool.length);
+  if (pool.length > 1 && Math.random() >= 0.15) {
+    let ticket = Math.random() * weights.reduce((sum, weight) => sum + weight, 0);
+    selectedIndex = weights.findIndex((weight) => (ticket -= weight) < 0);
+    if (selectedIndex < 0) selectedIndex = pool.length - 1;
+  }
+  const id = pool[selectedIndex].id;
+  recommendationSeen.add(id);
+  localStorage.setItem(RECOMMENDATION_SEEN_KEY, JSON.stringify([...recommendationSeen]));
+  return id;
+}
+
+function renderRecommendation(item) {
+  const result = document.getElementById('recommendation-result');
+  if (!item) {
+    result.innerHTML = '<p class="recommendation-empty">هنوز عنوان ناتمامی برای پیشنهاد وجود ندارد. عنوانی اضافه کن یا پیشرفت عنوان‌های موجود را ثبت کن.</p>';
+    return;
+  }
+  const cover = getCoverUrl(item);
+  const genreText = item.genres.length ? item.genres.map(escapeHtml).join('، ') : 'ژانری ثبت نشده';
+  const authorText = item.author ? escapeHtml(item.author) : 'نویسنده ثبت نشده';
+  const pct = Math.min(100, Math.round((item.read.length / item.total) * 100));
+  result.innerHTML = `
+    <article class="recommendation-card">
+      <div class="recommend-cover">
+        <img class="cover-placeholder" src="./icons/book.svg" alt="">
+        ${cover ? `<img class="cover-image" src="${escapeHtml(cover)}" alt="جلد ${escapeHtml(item.title)}" onerror="this.remove()">` : ''}
+      </div>
+      <h3>${escapeHtml(item.title)}</h3>
+      <p class="recommendation-author">${authorText}</p>
+      <p class="recommendation-meta">${genreText}<br>${item.read.length} از ${item.total} فصل · ${pct}% پیشرفت${item.interestRating ? `<br>امتیاز علاقه: ${item.interestRating} از ۵` : ''}</p>
+      <div class="bar-bg" style="width:100%"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <div class="recommendation-actions">
+        <button class="btn" id="btn-next-recommendation" type="button">پیشنهاد بعدی</button>
+        <button class="btn btn-primary" id="btn-open-recommended" type="button">بازکردن فصل‌ها</button>
+      </div>
+    </article>`;
+  document.getElementById('btn-next-recommendation').onclick = showNextRecommendation;
+  document.getElementById('btn-open-recommended').onclick = () => {
+    activeIndex = data.findIndex((entry) => entry.id === item.id);
+    if (activeIndex >= 0) openChapters();
+  };
+}
+
+function showNextRecommendation() {
+  const candidates = recommendationCandidates();
+  const id = pickRecommendation(candidates);
+  renderRecommendation(candidates.find((item) => item.id === id));
+}
+
+function showRecommendations() {
+  toggleMenu(false);
+  showView('recommendations');
+  showNextRecommendation();
+}
+
+function renderRecommendationPreferences() {
+  const container = document.getElementById('recommendation-preferences');
+  const genres = [...new Map(data.flatMap((item) => item.genres).map((value) => [value.trim().toLowerCase(), value.trim()]).filter(([key]) => key)).values()]
+    .sort((left, right) => left.localeCompare(right, 'fa'));
+  const authors = [...new Map(data.map((item) => item.author.trim()).filter(Boolean).map((value) => [value.toLowerCase(), value])).values()]
+    .sort((left, right) => left.localeCompare(right, 'fa'));
+  const renderGroup = (kind, label, values) => {
+    const selected = new Set(recommendationPreferences[kind].map((value) => value.trim().toLowerCase()));
+    if (!values.length) return `<div class="preference-group"><h4>${label}</h4><p class="preference-empty">این اطلاعات را هنگام افزودن یا ویرایش عنوان ثبت کن.</p></div>`;
+    return `<div class="preference-group"><h4>${label}</h4><div class="preference-options">${values.map((value) => `<button class="preference-chip" type="button" data-preference-kind="${kind}" data-preference-value="${escapeHtml(value)}" aria-pressed="${selected.has(value.toLowerCase())}">${escapeHtml(value)}</button>`).join('')}</div></div>`;
+  };
+  container.innerHTML = renderGroup('genres', 'ژانرهای محبوب', genres) + renderGroup('authors', 'نویسنده‌های محبوب', authors);
+  container.querySelectorAll('.preference-chip').forEach((button) => {
+    button.onclick = () => {
+      const kind = button.dataset.preferenceKind;
+      const value = button.dataset.preferenceValue;
+      const existingIndex = recommendationPreferences[kind].findIndex((entry) => entry.trim().toLowerCase() === value.toLowerCase());
+      if (existingIndex >= 0) recommendationPreferences[kind].splice(existingIndex, 1);
+      else recommendationPreferences[kind].push(value);
+      saveRecommendationPreferences();
+      renderRecommendationPreferences();
+    };
+  });
+}
+
 /* =========================================
    تیک زدن تکی با تشخیص خودکار اسکرول (بدون لگ)
 ========================================= */
@@ -621,6 +818,7 @@ chipsContainer.addEventListener('click', (e) => {
 
   updateCounter();
   data[activeIndex].read = Array.from(currentSet).sort((a, b) => a - b);
+  learnFromProgress(data[activeIndex]);
   save();
   renderList();
 });
@@ -636,7 +834,8 @@ function openManhwaEditor(index = null) {
   const existing = Number.isInteger(index) ? data[index] : null;
   modalEntryIsNew = !existing;
   modalEntry = existing || {
-    id: createId(), title: '', total: 1, read: [], cover: null,
+    id: createId(), title: '', author: '', genres: [], interestRating: 0, favorite: false,
+    total: 1, read: [], cover: null,
     hidden: listMode === 'hidden',
   };
   const m = modalEntry;
@@ -649,6 +848,17 @@ function openManhwaEditor(index = null) {
         <button type="button" class="btn" id="btn-entry-cover">انتخاب تصویر جلد</button>
       </div>
       <input id="entry-title" placeholder="عنوان" required>
+      <input id="entry-author" placeholder="نام نویسنده یا هنرمند">
+      <input id="entry-genres" placeholder="ژانرها؛ با ویرگول جدا کن">
+      <select id="entry-interest" aria-label="امتیاز علاقه">
+        <option value="0">امتیاز علاقه: خودکار</option>
+        <option value="1">امتیاز علاقه: ۱ از ۵</option>
+        <option value="2">امتیاز علاقه: ۲ از ۵</option>
+        <option value="3">امتیاز علاقه: ۳ از ۵</option>
+        <option value="4">امتیاز علاقه: ۴ از ۵</option>
+        <option value="5">امتیاز علاقه: ۵ از ۵</option>
+      </select>
+      <label class="inline-check"><input id="entry-favorite" type="checkbox"><span>این عنوان را دوست دارم</span></label>
       <input id="entry-total" type="number" min="1" placeholder="تعداد کل چپترها" required>
       <input id="entry-readto" type="number" min="0" placeholder="تا چپتر چند خوندی؟ (مثلا 180)">
       <div class="modal-actions">
@@ -658,6 +868,10 @@ function openManhwaEditor(index = null) {
     </form>
   `);
   document.getElementById('entry-title').value = m.title;
+  document.getElementById('entry-author').value = m.author;
+  document.getElementById('entry-genres').value = m.genres.join(', ');
+  document.getElementById('entry-interest').value = String(m.interestRating);
+  document.getElementById('entry-favorite').checked = m.favorite;
   document.getElementById('entry-total').value = existing ? m.total : '';
   document.getElementById('entry-readto').value = existing ? maxRead : '';
   renderEditCoverPreview(m);
@@ -673,9 +887,17 @@ window.saveManhwa = (e) => {
   const m = modalEntry;
   if (!m) return;
   const title = document.getElementById('entry-title').value.trim();
+  const author = document.getElementById('entry-author').value.trim();
+  const genres = [...new Set(document.getElementById('entry-genres').value.split(/[,،]/).map((genre) => genre.trim()).filter(Boolean))];
+  const interestRating = Math.max(0, Math.min(5, Number(document.getElementById('entry-interest').value) || 0));
+  const favorite = document.getElementById('entry-favorite').checked;
   const total = +document.getElementById('entry-total').value;
   if (!title || total < 1) return;
   m.title = title;
+  m.author = author;
+  m.genres = genres;
+  m.interestRating = interestRating;
+  m.favorite = favorite;
   m.total = total;
 
   let readTo = +(document.getElementById('entry-readto').value || 0);
@@ -683,6 +905,7 @@ window.saveManhwa = (e) => {
 
   m.read = [];
   for (let i = 1; i <= readTo; i++) m.read.push(i);
+  learnFromProgress(m);
 
   if (modalEntryIsNew) data.push(m);
   modalEntryIsNew = false;
@@ -741,6 +964,7 @@ window.handleNativeBack = () => {
   if (appModal.open) { appModal.close(); return true; }
   if (document.body.classList.contains('menu-open')) { toggleMenu(false); return true; }
   if (!document.getElementById('view-settings').classList.contains('hidden')) { showView('list'); return true; }
+  if (!document.getElementById('view-recommendations').classList.contains('hidden')) { showView('list'); return true; }
   if (!document.getElementById('view-chapters').classList.contains('hidden')) { showView('list'); return true; }
   if (selectedIds.size) { selectedIds.clear(); updateToolbar(); return true; }
   if (listMode === 'hidden') { showLibrary('main'); return true; }
@@ -836,8 +1060,10 @@ document.getElementById('btn-edit-selected').onclick = () => {
 };
 document.getElementById('btn-library-main').onclick = () => showLibrary('main');
 document.getElementById('btn-library-hidden').onclick = () => showLibrary('hidden');
+document.getElementById('btn-recommendations').onclick = showRecommendations;
 document.getElementById('btn-settings').onclick = () => { toggleMenu(false); showView('settings'); };
 document.getElementById('btn-settings-back').onclick = () => showView('list');
+document.getElementById('btn-recommendations-back').onclick = () => showView('list');
 document.getElementById('btn-theme-mode').onclick = () => {
   themeSettings.mode = themeSettings.mode === 'dark' ? 'light' : 'dark';
   saveThemeSettings();
@@ -902,6 +1128,7 @@ window.onAndroidStorageReady = (folderName) => {
 };
 
 // اجرای اولیه
+data.forEach(learnFromProgress);
 renderThemeSettings();
 showView('list');
 </script>

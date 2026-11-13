@@ -28,13 +28,17 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.documentfile.provider.DocumentFile
 import java.util.concurrent.Executors
+import java.util.ArrayList
+import java.util.HashSet
 import org.json.JSONObject
+import org.json.JSONArray
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var assetLoader: WebViewAssetLoader
     private val io = Executors.newSingleThreadExecutor()
     private val prefs by lazy { getSharedPreferences("storage", MODE_PRIVATE) }
+    private val recommendationState by lazy { getSharedPreferences("recommendations", MODE_PRIVATE) }
     private var pendingExport: String? = null
     @Volatile private var pendingCoverId: String? = null
 
@@ -281,6 +285,52 @@ class MainActivity : ComponentActivity() {
                 isAppearanceLightNavigationBars = light
             }
         }
+        @JavascriptInterface fun recommendBook(candidatesJson: String, genreWeightsJson: String, favoriteAuthorsJson: String): String {
+            val preferences = BookRecommendationEngine.UserPreferences()
+            try {
+                val weights = JSONObject(genreWeightsJson)
+                val keys = weights.keys()
+                while (keys.hasNext()) {
+                    val genre = keys.next().trim().lowercase(java.util.Locale.ROOT)
+                    if (genre.isNotEmpty()) preferences.genreWeights[genre] = weights.optInt(genre, 10).coerceIn(1, 50)
+                }
+            } catch (_: Exception) { }
+            val favoriteAuthors = readStringSet(favoriteAuthorsJson).map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
+            val candidates = ArrayList<BookRecommendationEngine.Book>()
+            try {
+                val records = JSONArray(candidatesJson)
+                for (index in 0 until records.length()) {
+                    val record = records.optJSONObject(index) ?: continue
+                    val id = record.optString("id").trim()
+                    if (id.isEmpty()) continue
+                    val genres = ArrayList<String>()
+                    val genreArray = record.optJSONArray("genres")
+                    if (genreArray != null) for (genreIndex in 0 until genreArray.length()) {
+                        genreArray.optString(genreIndex).trim().takeIf { it.isNotEmpty() }?.let(genres::add)
+                    }
+                    val author = record.optString("author").trim()
+                    candidates.add(BookRecommendationEngine.Book(
+                        id,
+                        record.optString("title"),
+                        genres,
+                        author,
+                        record.optInt("interestRating", 0).coerceIn(0, 5),
+                        record.optBoolean("favorite", false),
+                        favoriteAuthors.contains(author.lowercase(java.util.Locale.ROOT)),
+                    ))
+                }
+            } catch (_: Exception) { return "" }
+            val seen = recommendationState.getStringSet("seen_books", emptySet())?.toMutableSet() ?: HashSet<String>()
+            val recommendation = BookRecommendationEngine(preferences).recommendBook(candidates, seen)
+                ?: return ""
+            seen.add(recommendation.id)
+            recommendationState.edit().putStringSet("seen_books", seen).apply()
+            return recommendation.id
+        }
+        private fun readStringSet(json: String): Set<String> = try {
+            val values = JSONArray(json)
+            (0 until values.length()).mapNotNull { index -> values.optString(index).trim().takeIf { it.isNotEmpty() } }.toSet()
+        } catch (_: Exception) { emptySet() }
         @JavascriptInterface fun chooseFolder() = runOnUiThread {
             folderPicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
         }
