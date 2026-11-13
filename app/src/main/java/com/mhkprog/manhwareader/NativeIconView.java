@@ -49,6 +49,7 @@ final class NativeIconView extends View {
             case "next": resourceName = "direction"; break;
             case "edit": resourceName = "pencil"; break;
             case "manhwa": resourceName = "manhwa"; break;
+            case "anime": resourceName = "anime"; break;
             case "help": resourceName = "help"; break;
             case "undo": resourceName = "undo"; break;
             case "redo": resourceName = "redo"; break;
