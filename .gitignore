@@ -1,13 +1,7 @@
 .gradle/
-.kotlin/
-.idea/
 **/build/
 local.properties
 *.jks
 *.keystore
-release-key.txt
-*.apk
-*.aab
 *.iml
-captures/
-.DS_Store
+.idea/

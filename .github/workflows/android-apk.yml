@@ -1,61 +1,89 @@
 name: Build signed Android APK
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v6
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.6.0'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Install Android SDK packages
-        run: sdkmanager --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
-
-      - name: Restore signing key
+      - name: Configure persistent signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        shell: bash
         run: |
-          set -euo pipefail
-          test -n "$ANDROID_KEYSTORE_BASE64"
-          key_file="$RUNNER_TEMP/manhwas-release.jks"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key_file"
-          printf 'ANDROID_KEYSTORE_FILE=%s\n' "$key_file" >> "$GITHUB_ENV"
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Configure ANDROID_KEYSTORE_BASE64 and the Android signing secrets in repository settings."
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/novel-reader-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          if [ ! -s "$keystore_path" ]; then
+            echo "::error::The Android signing key could not be decoded."
+            exit 1
+          fi
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      - name: Build signed release APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bash ./gradlew --no-daemon :app:assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon :app:assembleRelease
 
       - name: Verify APK signature
-        run: $ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: manhwas-release-apk
+          name: NovelReader-Android-v1.4.28
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish APK to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          project_version="$(sed -n "s/^[[:space:]]*versionName '\([^']*\)'.*/\1/p" app/build.gradle | head -n 1)"
+          if [[ "$version" != "$project_version" ]]; then
+            echo "::error::Tag version $version does not match app/build.gradle versionName $project_version."
+            exit 1
+          fi
+          apk_name="NovelReader-Android-v${version}-universal.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk_name"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$apk_name" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$apk_name" --title "Novel Reader Android $version" \
+              --generate-notes --verify-tag
+          fi

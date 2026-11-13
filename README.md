@@ -1,30 +1,32 @@
-# Reading Progress Tracker
+# کتاب‌خوان اندروید
 
-An offline-first Android and web app for tracking reading progress. The Android version wraps the local web interface in a WebView and stores user data on-device.
+نسخهٔ 1.4.28 از رابط بومی Android استفاده می‌کند و پیشنهاددهندهٔ NR را نگه می‌دارد. در کنار فصل‌های متنی، فصل تازه می‌تواند یک PDF یا آرشیو تصویری ZIP/CBZ باشد. وضعیت مطالعه و صفحهٔ آخر هر فایل ذخیره می‌شود.
 
-## Features
+## افزودن و خواندن PDF یا ZIP/CBZ
 
-- Add reading entries with a title, chapter count, and current progress.
-- Tap any card to open its chapter checklist.
-- Long-press a card to select items. The toolbar then offers edit and delete; editing is disabled when multiple items are selected.
-- Change a cover image from the edit dialog.
-- Choose a storage folder and export a backup.
-- Use the app offline after installation.
+از صفحهٔ فصل‌ها دکمهٔ افزودن را بزن و «فایل PDF یا ZIP/CBZ تصویری» را انتخاب کن. فایل به پوشهٔ اختصاصی برنامه در `Documents/NovelReader/.reader` کپی می‌شود و برای خواندن به اینترنت نیاز ندارد. در ZIP/CBZ تصویرهای JPG، PNG، WebP، GIF و BMP پشتیبانی می‌شوند؛ شمارهٔ نام فایل‌ها به ترتیب طبیعی مرتب می‌شود. صفحهٔ PDF یا تصویر با دکمه‌های پایین عوض می‌شود و برنامه محل مطالعه را به خاطر می‌سپارد.
 
-The bundled Vazirmatn font is licensed under SIL OFL 1.1; its license is in `fonts/OFL.txt`.
+در اجرای اول، یک پوشه از انتخاب‌گر Android انتخاب کن تا برنامه پوشهٔ `NovelReader` و داده‌های خودش را در آن بسازد. فایل‌های `.covers`، `.plugins` و `.reader` مخفی هستند و فایل `.nomedia` آن‌ها را از برنامه‌های گالری پنهان می‌کند.
 
-## Build an Android APK
+## پیشنهادها و اطلاعات کتاب
 
-Push changes to `main`, or start the **Build signed Android APK** workflow from GitHub Actions. After a successful run, download the APK artifact and extract it from the ZIP.
+پیشنهاددهنده از ژانرها، نویسندگان و علایق، امتیازها، علاقه‌مندی‌ها و سابقهٔ مطالعه استفاده می‌کند. اطلاعات کتاب را می‌توان به‌شکل JSON وارد کرد. فایل کتابخانه و متن فصل‌ها در پوشهٔ انتخاب‌شده نگهداری می‌شوند؛ تنظیمات پیشنهاددهی نیز داخل برنامه ذخیره می‌شود.
 
-The workflow signs the release with the repository's configured signing secrets and verifies the APK signature before upload.
+## ساخت و دریافت APK
 
-## Local build
-
-With Android SDK and JDK 17 or newer:
+این پروژه به JDK 17 و Android SDK Platform 36 نیاز دارد. برای ساخت محلی در PowerShell:
 
 ```powershell
-.\gradlew.bat --no-daemon :app:assembleDebug
+.\gradlew.bat :app:assembleRelease
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+خروجی محلی در `app/build/outputs/apk/release/app-release.apk` قرار می‌گیرد. روی مخزن `MHK-prog/manhwas-android`، با هر push به `main` یا اجرای دستی workflow، APK امضاشده ساخته و به‌عنوان Artifact در همان اجرای GitHub Actions قرار می‌گیرد. برای نصب نسخهٔ بعدی روی نسخهٔ قبلی، امضای ثابت لازم است؛ secretهای زیر باید در تنظیمات مخزن ثبت شده باشند:
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+جزئیات آماده‌سازی کلید در [ANDROID_UPDATE_SIGNING.md](ANDROID_UPDATE_SIGNING.md) است. فایل کلید را در مخزن قرار نده.
+
+شناسهٔ بسته `com.mohammad.novelreader` و کمینهٔ Android نسخهٔ 6.0 (API 23) است.

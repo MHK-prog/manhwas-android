@@ -1,0 +1,51 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.novelreader.app'
+    compileSdk 36
+
+    sourceSets {
+        main {
+            res.srcDir rootProject.file('icons')
+        }
+    }
+
+    defaultConfig {
+        applicationId 'com.mohammad.novelreader'
+        minSdk 23
+        targetSdk 36
+        versionCode 162
+        versionName '1.4.28'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+        signingConfigs {
+            stable {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storeType 'JKS'
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.stable
+            }
+        }
+        release {
+            minifyEnabled false
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.stable
+            }
+        }
+    }
+}
