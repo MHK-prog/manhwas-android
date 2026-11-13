@@ -1,4 +1,4 @@
-name: Build signed Android APK
+name: Build signed Manhwa APK
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
             echo "::error::Configure ANDROID_KEYSTORE_BASE64 and the Android signing secrets in repository settings."
             exit 1
           fi
-          keystore_path="$RUNNER_TEMP/novel-reader-release.jks"
+          keystore_path="$RUNNER_TEMP/manhwa-reader-release.jks"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
           if [ ! -s "$keystore_path" ]; then
             echo "::error::The Android signing key could not be decoded."
@@ -48,17 +48,31 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: chmod +x gradlew && ./gradlew --no-daemon :app:assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon :app:copyNamedReleaseApk
+
+      - name: Locate named APK
+        id: apk
+        run: |
+          version="$(sed -n "s/^[[:space:]]*versionName '\([^']*\)'.*/\1/p" app/build.gradle | head -n 1)"
+          apk_name="Manhwa-Reader-Android-v${version}.apk"
+          if [ ! -s "app/build/outputs/apk/manhwa-reader/$apk_name" ]; then
+            echo "::error::The named APK was not produced."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
 
       - name: Verify APK signature
+        env:
+          APK_NAME: ${{ steps.apk.outputs.apk_name }}
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "app/build/outputs/apk/manhwa-reader/$APK_NAME"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovelReader-Android-v1.4.28
-          path: app/build/outputs/apk/release/app-release.apk
+          name: Manhwa-Reader-Android-v${{ steps.apk.outputs.version }}
+          path: app/build/outputs/apk/manhwa-reader/${{ steps.apk.outputs.apk_name }}
           if-no-files-found: error
           retention-days: 90
 
@@ -73,11 +87,11 @@ jobs:
             echo "::error::Tag version $version does not match app/build.gradle versionName $project_version."
             exit 1
           fi
-          apk_name="NovelReader-Android-v${version}-universal.apk"
-          cp app/build/outputs/apk/release/app-release.apk "$apk_name"
+          apk_name="Manhwa-Reader-Android-v${version}.apk"
+          cp "app/build/outputs/apk/manhwa-reader/$apk_name" "$apk_name"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$apk_name" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$apk_name" --title "Novel Reader Android $version" \
+            gh release create "$GITHUB_REF_NAME" "$apk_name" --title "Manhwa Reader Android $version" \
               --generate-notes --verify-tag
           fi

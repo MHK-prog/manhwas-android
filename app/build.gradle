@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace 'com.novelreader.app'
+    namespace 'com.mhkprog.manhwareader'
     compileSdk 36
 
     sourceSets {
@@ -11,7 +11,7 @@ android {
     }
 
     defaultConfig {
-        applicationId 'com.mohammad.novelreader'
+        applicationId 'com.mhkprog.manhwareader'
         minSdk 23
         targetSdk 36
         versionCode 162
@@ -48,4 +48,13 @@ android {
             }
         }
     }
+}
+
+def releaseVersionName = android.defaultConfig.versionName
+tasks.register('copyNamedReleaseApk', Copy) {
+    dependsOn tasks.named('assembleRelease')
+    def releaseApkDirectory = layout.buildDirectory.dir('outputs/apk/release')
+    from(releaseApkDirectory.map { it.file('app-release.apk') })
+    into(layout.buildDirectory.dir('outputs/apk/manhwa-reader'))
+    rename { "Manhwa-Reader-Android-v${releaseVersionName}.apk" }
 }

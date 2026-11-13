@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = 'NovelReaderAndroid'
+rootProject.name = 'ManhwaReaderAndroid'
 include ':app'

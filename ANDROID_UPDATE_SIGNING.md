@@ -1,23 +1,23 @@
-# امضای ثابت برای نصب به‌روزرسانی‌ها
+# امضای ثابت APK
 
-اندروید فقط APKای را روی برنامهٔ نصب‌شده به‌روزرسانی می‌کند که با همان شناسهٔ برنامه و همان کلید امضا ساخته شده باشد. شناسهٔ فعلی برنامه `com.mohammad.novelreader` است. کلید JKS را امن نگه دار و آن را داخل GitHub یا مخزن پروژه قرار نده.
+برای به‌روزرسانی نصب موجود، APKها باید با شناسهٔ `com.mhkprog.manhwareader` و همان کلید امضا ساخته شوند. کلید JKS را امن نگه دار و آن را داخل GitHub یا مخزن پروژه قرار نده.
 
 ## ساخت کلید در ویندوز
 
-PowerShell را باز کن و این فرمان را اجرا کن:
+در PowerShell این فرمان را اجرا کن:
 
 ```powershell
 $keytool = (Get-Command keytool.exe -ErrorAction Stop).Source
-$keyDir = Join-Path $env:USERPROFILE '.novel-reader-signing'
-$keyPath = Join-Path $keyDir 'novel-reader-release.jks'
+$keyDir = Join-Path $env:USERPROFILE '.manhwa-reader-signing'
+$keyPath = Join-Path $keyDir 'manhwa-reader-release.jks'
 New-Item -ItemType Directory -Path $keyDir -Force | Out-Null
-& $keytool -genkeypair -v -keystore $keyPath -alias manhwas -keyalg RSA -keysize 4096 -validity 10000 -dname 'CN=Novel Reader'
+& $keytool -genkeypair -v -keystore $keyPath -alias manhwas -keyalg RSA -keysize 4096 -validity 10000 -dname 'CN=Manhwa Reader'
 if ($LASTEXITCODE -ne 0) { throw 'ساخت کلید ناموفق بود.' }
 [Convert]::ToBase64String([IO.File]::ReadAllBytes($keyPath)) | Set-Clipboard
 Write-Host 'مقدار Base64 در Clipboard کپی شد. فایل JKS و رمزهایش را امن نگه دار.'
 ```
 
-رمز مخزن را انتخاب و نگه‌داری کن. برای رمز کلید هم همان رمز را وارد کن. این دستور با alias `manhwas` هماهنگ است. اگر کلید را قبلاً ساخته‌ای و Secretهایش را ثبت کرده‌ای، نیازی به ساخت کلید تازه نیست.
+رمز مخزن را انتخاب و نگه‌داری کن. برای رمز کلید هم همان رمز را وارد کن. Alias این کلید `manhwas` است. اگر کلید را قبلاً ساخته‌ای و Secretهایش را ثبت کرده‌ای، همان را نگه دار.
 
 ## ثبت Secretها در GitHub
 
@@ -30,4 +30,4 @@ Write-Host 'مقدار Base64 در Clipboard کپی شد. فایل JKS و رمز
 | `ANDROID_KEY_ALIAS` | `manhwas` |
 | `ANDROID_KEY_PASSWORD` | رمز کلید |
 
-پس از آن، GitHub Actions از همین کلید برای ساخت نسخه‌های بعدی استفاده می‌کند. اگر APK قبلی با کلید دیگری امضا شده باشد، اندروید به‌روزرسانی را نمی‌پذیرد و نصب نسخهٔ قبلی باید حذف شود.
+GitHub Actions از همین کلید برای ساخت نسخه‌های بعدی استفاده می‌کند. اگر APK قبلی با کلید دیگری امضا شده باشد، اندروید به‌روزرسانی را نمی‌پذیرد.

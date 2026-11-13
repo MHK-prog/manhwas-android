@@ -1,4 +1,4 @@
-package com.novelreader.app;
+package com.mhkprog.manhwareader;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -48,7 +48,7 @@ final class NativeIconView extends View {
             case "back": resourceName = "direction"; rotation = 180f; break;
             case "next": resourceName = "direction"; break;
             case "edit": resourceName = "pencil"; break;
-            case "book": resourceName = "open_book"; break;
+            case "manhwa": resourceName = "manhwa"; break;
             case "help": resourceName = "help"; break;
             case "undo": resourceName = "undo"; break;
             case "redo": resourceName = "redo"; break;

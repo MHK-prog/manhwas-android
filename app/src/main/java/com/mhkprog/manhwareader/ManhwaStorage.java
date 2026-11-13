@@ -1,4 +1,4 @@
-package com.novelreader.app;
+package com.mhkprog.manhwareader;
 
 import android.content.Context;
 import android.content.Intent;
@@ -23,27 +23,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** SAF storage for the existing Documents/NovelReader library format. */
-final class NovelStorage {
-    private static final String PREFS = "novel_storage";
+/** SAF storage for the existing Documents/ManhwaReader library format. */
+final class ManhwaStorage {
+    private static final String PREFS = "manhwa_storage";
     private static final String TREE_URI = "tree_uri";
     private static final String FOLDER_ID = "folder_document_id";
-    private static final String FOLDER = "NovelReader";
+    private static final String FOLDER = "ManhwaReader";
     private static final String COVER_FOLDER = ".covers";
-    private static final String PLUGIN_FOLDER = ".plugins";
-    private static final String READER_FOLDER = ".reader";
-    private static final String PLUGIN_DOCUMENT_ID = "plugin_folder_document_id";
-    private static final String PLUGIN_MARKER_DOCUMENT_ID = "plugin_marker_document_id";
     private static final String NO_MEDIA_FILE = ".nomedia";
     private static final String DIRECTORY_MIME = "vnd.android.document/directory";
     private static final long MAX_COVER_CACHE_BYTES = 64L * 1024L * 1024L;
-    private static final long MAX_READER_FILE_BYTES = 1024L * 1024L * 1024L;
 
     private final MainActivity activity;
     private final SharedPreferences preferences;
     private final File legacyPrivateCoverDirectory;
     private final File coverCacheDirectory;
-    private final File readerCacheDirectory;
     private final Map<String, Uri> coverDocuments = new HashMap<>();
     private Uri cachedCoverRoot;
     private Uri cachedCoverDirectory;
@@ -52,12 +46,11 @@ final class NovelStorage {
     private boolean coverIndexLoaded;
     private String lastError = "";
 
-    NovelStorage(MainActivity activity) {
+    ManhwaStorage(MainActivity activity) {
         this.activity = activity;
         preferences = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         legacyPrivateCoverDirectory = new File(activity.getFilesDir(), "covers");
         coverCacheDirectory = new File(activity.getCacheDir(), "covers");
-        readerCacheDirectory = new File(activity.getCacheDir(), "reader_documents");
     }
 
     boolean isReady() {
@@ -66,7 +59,7 @@ final class NovelStorage {
         try { queryName(dir); return true; }
         catch (Exception error) {
             lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            android.util.Log.e("NovelReader", "Saved folder is unavailable", error);
+            android.util.Log.e("ManhwaReader", "Saved folder is unavailable", error);
             return false;
         }
     }
@@ -92,21 +85,21 @@ final class NovelStorage {
         } else {
             Uri existing = findChild(selectedDoc, FOLDER);
             if (existing != null && !DIRECTORY_MIME.equals(activity.getContentResolver().getType(existing))) {
-                throw new IllegalStateException("A file named NovelReader already exists.");
+                throw new IllegalStateException("A file named ManhwaReader already exists.");
             }
             Uri folder = existing != null ? existing : DocumentsContract.createDocument(
                     activity.getContentResolver(), selectedDoc, DIRECTORY_MIME, FOLDER);
-            if (folder == null) throw new IllegalStateException("Could not create the NovelReader folder.");
+            if (folder == null) throw new IllegalStateException("Could not create the ManhwaReader folder.");
             folderId = DocumentsContract.getDocumentId(folder);
         }
         preferences.edit().putString(TREE_URI, selectedTree.toString()).putString(FOLDER_ID, folderId)
-                .remove(PLUGIN_DOCUMENT_ID).remove(PLUGIN_MARKER_DOCUMENT_ID).apply();
+                .apply();
         clearCoverDocumentCache();
     }
 
     String read(String fileName) throws Exception {
         Uri dir = directoryUri();
-        if (dir == null) { lastError = "No NovelReader folder is selected."; throw new IOException(lastError); }
+        if (dir == null) { lastError = "No ManhwaReader folder is selected."; throw new IOException(lastError); }
         if (!supportedName(fileName)) { lastError = "Only .md and .json files are supported."; throw new IOException(lastError); }
         try {
             Uri file = findChild(dir, fileName);
@@ -122,7 +115,7 @@ final class NovelStorage {
             }
         } catch (Exception error) {
             lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            android.util.Log.e("NovelReader", "Could not read " + fileName, error);
+            android.util.Log.e("ManhwaReader", "Could not read " + fileName, error);
             throw error;
         }
     }
@@ -130,7 +123,7 @@ final class NovelStorage {
     boolean write(String fileName, String contents) {
         Uri dir = directoryUri();
         lastError = "";
-        if (dir == null) { lastError = "No NovelReader folder is selected."; return false; }
+        if (dir == null) { lastError = "No ManhwaReader folder is selected."; return false; }
         if (!supportedName(fileName)) { lastError = "Only .md and .json files are supported."; return false; }
         try {
             String mime = fileName.endsWith(".json") ? "application/json"
@@ -147,320 +140,9 @@ final class NovelStorage {
             return true;
         } catch (Exception error) {
             lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            android.util.Log.e("NovelReader", "Could not write " + fileName, error);
+            android.util.Log.e("ManhwaReader", "Could not write " + fileName, error);
             return false;
         }
-    }
-
-    String importReaderFile(Uri source, String extension) throws Exception {
-        String normalizedExtension = extension == null ? "" : extension.toLowerCase(java.util.Locale.ROOT);
-        if (!("pdf".equals(normalizedExtension) || "zip".equals(normalizedExtension)
-                || "cbz".equals(normalizedExtension))) {
-            throw new IOException("Only PDF, ZIP, and CBZ files are supported.");
-        }
-        String fileName = "reader-" + java.util.UUID.randomUUID().toString().replace("-", "")
-                + "." + normalizedExtension;
-        Uri destination = null;
-        try {
-            Uri directory = readerDirectoryUri(true);
-            String mime = "pdf".equals(normalizedExtension) ? "application/pdf" : "application/zip";
-            destination = DocumentsContract.createDocument(activity.getContentResolver(), directory, mime, fileName);
-            if (destination == null) throw new IOException("The storage provider could not create the reading file.");
-            try (InputStream input = activity.getContentResolver().openInputStream(source);
-                 OutputStream output = activity.getContentResolver().openOutputStream(destination, "rwt")) {
-                if (input == null || output == null) throw new IOException("The selected file could not be opened.");
-                copyBounded(input, output, MAX_READER_FILE_BYTES);
-                output.flush();
-            }
-            lastError = "";
-            return fileName;
-        } catch (Exception error) {
-            if (destination != null) {
-                try { DocumentsContract.deleteDocument(activity.getContentResolver(), destination); }
-                catch (Exception ignored) { }
-            }
-            lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            throw error;
-        }
-    }
-
-    File cacheReaderFile(String fileName) throws Exception {
-        if (!safeReaderFileName(fileName)) throw new IOException("Invalid reading file name.");
-        Uri directory = readerDirectoryUri(false);
-        if (directory == null) throw new IOException("The reading files folder is unavailable.");
-        Uri source = findChild(directory, fileName);
-        if (source == null) throw new IOException("The reading file is missing from storage.");
-        if (!readerCacheDirectory.isDirectory() && !readerCacheDirectory.mkdirs()) {
-            throw new IOException("Could not prepare temporary reading storage.");
-        }
-        File cached = new File(readerCacheDirectory, fileName);
-        try (InputStream input = activity.getContentResolver().openInputStream(source);
-             OutputStream output = new FileOutputStream(cached, false)) {
-            if (input == null) throw new IOException("The storage provider returned no reading file stream.");
-            copyBounded(input, output, MAX_READER_FILE_BYTES);
-            output.flush();
-            return cached;
-        } catch (Exception error) {
-            if (cached.exists() && !cached.delete()) {
-                android.util.Log.w("NovelReader", "Could not remove incomplete reader cache " + fileName);
-            }
-            throw error;
-        }
-    }
-
-    void deleteReaderFile(String fileName) {
-        if (!safeReaderFileName(fileName)) return;
-        deleteCachedReaderFile(fileName);
-        try {
-            Uri directory = readerDirectoryUri(false);
-            if (directory == null) return;
-            Uri file = findChild(directory, fileName);
-            if (file != null) DocumentsContract.deleteDocument(activity.getContentResolver(), file);
-        } catch (Exception error) {
-            android.util.Log.w("NovelReader", "Could not delete reader file " + fileName, error);
-        }
-    }
-
-    void deleteCachedReaderFile(String fileName) {
-        if (!safeReaderFileName(fileName)) return;
-        File cached = new File(readerCacheDirectory, fileName);
-        if (cached.exists() && !cached.delete()) {
-            android.util.Log.w("NovelReader", "Could not delete cached reader file " + fileName);
-        }
-    }
-
-    private Uri readerDirectoryUri(boolean create) throws Exception {
-        Uri root = directoryUri();
-        if (root == null) throw new IOException("No NovelReader folder is selected.");
-        Uri directory = findChild(root, READER_FOLDER);
-        if (directory == null && create) {
-            directory = DocumentsContract.createDocument(activity.getContentResolver(), root,
-                    DIRECTORY_MIME, READER_FOLDER);
-        }
-        if (directory == null) return null;
-        String mime = activity.getContentResolver().getType(directory);
-        if (mime != null && !DIRECTORY_MIME.equals(mime)) throw new IOException("NovelReader/.reader is not a folder.");
-        if (create) {
-            Uri marker = findChild(directory, NO_MEDIA_FILE);
-            if (marker == null) marker = DocumentsContract.createDocument(activity.getContentResolver(), directory,
-                    "application/octet-stream", NO_MEDIA_FILE);
-            if (marker == null) throw new IOException("Could not hide imported reading files from media scanners.");
-        }
-        return directory;
-    }
-
-    private static boolean safeReaderFileName(String name) {
-        return name != null && name.matches("reader-[A-Fa-f0-9]{32}\\.(pdf|zip|cbz)");
-    }
-
-    private static void copyBounded(InputStream input, OutputStream output, long maximumBytes) throws IOException {
-        byte[] buffer = new byte[64 * 1024];
-        long total = 0;
-        int count;
-        while ((count = input.read(buffer)) >= 0) {
-            total += count;
-            if (total > maximumBytes) throw new IOException("The selected file is larger than 1 GB.");
-            output.write(buffer, 0, count);
-        }
-    }
-
-    List<String> listPluginIds() {
-        List<String> ids = new ArrayList<>();
-        try {
-            Uri root = extensionRootUri(false);
-            if (root == null) return ids;
-            String documentId = DocumentsContract.getDocumentId(root);
-            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(root, documentId);
-            String[] columns = { DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME };
-            try (Cursor cursor = activity.getContentResolver().query(children, columns, null, null, null)) {
-                if (cursor == null) return ids;
-                int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
-                int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
-                while (cursor.moveToNext()) {
-                    String name = cursor.getString(nameColumn);
-                    if (isPluginId(name)) {
-                        Uri child = DocumentsContract.buildDocumentUriUsingTree(root, cursor.getString(idColumn));
-                        String mime = activity.getContentResolver().getType(child);
-                        if (mime == null || DIRECTORY_MIME.equals(mime)) ids.add(name);
-                    }
-                }
-            }
-        } catch (Exception error) {
-            android.util.Log.w("NovelReader", "Could not list installed extensions", error);
-        }
-        Collections.sort(ids, String.CASE_INSENSITIVE_ORDER);
-        return ids;
-    }
-
-    String readPluginFile(String pluginId, String fileName) throws Exception {
-        if (!isPluginId(pluginId) || !safePluginFileName(fileName)) throw new IOException("Invalid extension path.");
-        Uri directory = pluginDirectoryUri(pluginId, false);
-        if (directory == null) return null;
-        Uri file = findChild(directory, fileName);
-        if (file == null) return null;
-        try (InputStream input = activity.getContentResolver().openInputStream(file);
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            if (input == null) throw new IOException("The extension provider returned no input stream.");
-            copy(input, output);
-            return output.toString("UTF-8");
-        }
-    }
-
-    boolean writePluginFile(String pluginId, String fileName, String contents) {
-        if (!isPluginId(pluginId) || !safePluginFileName(fileName)) {
-            lastError = "Invalid extension path.";
-            return false;
-        }
-        try {
-            Uri directory = pluginDirectoryUri(pluginId, true);
-            String mime = fileName.endsWith(".json")
-                    ? "application/json" : "application/octet-stream";
-            Uri file = findChild(directory, fileName);
-            if (file == null) file = DocumentsContract.createDocument(
-                    activity.getContentResolver(), directory, mime, fileName);
-            if (file == null) throw new IOException("The storage provider could not create " + fileName + ".");
-            try (OutputStream output = activity.getContentResolver().openOutputStream(file, "rwt")) {
-                if (output == null) throw new IOException("The storage provider returned no extension output stream.");
-                output.write((contents == null ? "" : contents).getBytes(StandardCharsets.UTF_8));
-                output.flush();
-            }
-            lastError = "";
-            return true;
-        } catch (Exception error) {
-            lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            android.util.Log.e("NovelReader", "Could not write extension file " + fileName, error);
-            return false;
-        }
-    }
-
-    boolean deletePlugin(String pluginId) {
-        if (!isPluginId(pluginId)) return false;
-        try {
-            Uri directory = pluginDirectoryUri(pluginId, false);
-            if (directory == null) return true;
-            String id = DocumentsContract.getDocumentId(directory);
-            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(directory, id);
-            String[] columns = { DocumentsContract.Document.COLUMN_DOCUMENT_ID };
-            List<Uri> files = new ArrayList<>();
-            try (Cursor cursor = activity.getContentResolver().query(children, columns, null, null, null)) {
-                if (cursor != null) {
-                    int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
-                    while (cursor.moveToNext()) {
-                        files.add(DocumentsContract.buildDocumentUriUsingTree(directory, cursor.getString(idColumn)));
-                    }
-                }
-            }
-            for (Uri file : files) {
-                if (!DocumentsContract.deleteDocument(activity.getContentResolver(), file)) {
-                    throw new IOException("Could not remove an extension file.");
-                }
-            }
-            if (!DocumentsContract.deleteDocument(activity.getContentResolver(), directory)) {
-                throw new IOException("Could not remove the extension folder.");
-            }
-            preferences.edit().remove(pluginPreferenceKey(pluginId)).apply();
-            return true;
-        } catch (Exception error) {
-            lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            android.util.Log.e("NovelReader", "Could not remove extension " + pluginId, error);
-            return false;
-        }
-    }
-
-    private Uri extensionRootUri(boolean create) throws Exception {
-        Uri root = directoryUri();
-        if (root == null) {
-            if (create) throw new IOException("No NovelReader folder is selected.");
-            return null;
-        }
-        Uri plugins = resolveExtensionChild(root, PLUGIN_FOLDER, PLUGIN_DOCUMENT_ID, DIRECTORY_MIME, true, create);
-        if (plugins == null) return null;
-        if (create && resolveExtensionChild(plugins, NO_MEDIA_FILE, PLUGIN_MARKER_DOCUMENT_ID,
-                "application/octet-stream", false, true) == null) {
-            throw new IOException("Could not hide the extension storage folder from media scanners.");
-        }
-        return plugins;
-    }
-
-    private Uri pluginDirectoryUri(String pluginId, boolean create) throws Exception {
-        if (!isPluginId(pluginId)) throw new IOException("Invalid extension id.");
-        Uri root = extensionRootUri(create);
-        if (root == null) return null;
-        return resolveExtensionChild(root, pluginId, pluginPreferenceKey(pluginId),
-                DIRECTORY_MIME, true, create);
-    }
-
-    private static String pluginPreferenceKey(String pluginId) {
-        return "plugin_directory_" + pluginId;
-    }
-
-    private Uri resolveExtensionChild(Uri parent, String name, String preferenceKey,
-                                      String mimeType, boolean directory, boolean create) throws Exception {
-        String rememberedId = preferences.getString(preferenceKey, null);
-        if (rememberedId != null) {
-            Uri remembered = DocumentsContract.buildDocumentUriUsingTree(
-                    Uri.parse(preferences.getString(TREE_URI, "")), rememberedId);
-            if (extensionDocumentExists(remembered, directory)) return remembered;
-            preferences.edit().remove(preferenceKey).apply();
-        }
-
-        Uri direct = directExternalStorageChild(parent, name);
-        if (direct != null && extensionDocumentExists(direct, directory)) {
-            rememberExtensionDocument(preferenceKey, direct);
-            return direct;
-        }
-
-        Uri existing = findChild(parent, name);
-        if (existing != null && extensionDocumentExists(existing, directory)) {
-            rememberExtensionDocument(preferenceKey, existing);
-            return existing;
-        }
-        if (!create) return null;
-
-        Uri created = directory
-                ? createDirectory(parent, name)
-                : DocumentsContract.createDocument(activity.getContentResolver(), parent, mimeType, name);
-        if (created == null) throw new IOException("Could not create " + name + ".");
-        rememberExtensionDocument(preferenceKey, created);
-        return created;
-    }
-
-    private Uri directExternalStorageChild(Uri parent, String name) throws Exception {
-        if (!"com.android.externalstorage.documents".equals(parent.getAuthority())) return null;
-        String parentId = DocumentsContract.getDocumentId(parent);
-        return DocumentsContract.buildDocumentUriUsingTree(parent, parentId + "/" + name);
-    }
-
-    private boolean extensionDocumentExists(Uri document, boolean directory) {
-        try {
-            queryName(document);
-            String mime = activity.getContentResolver().getType(document);
-            return !directory || mime == null || DIRECTORY_MIME.equals(mime);
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private void rememberExtensionDocument(String preferenceKey, Uri document) throws Exception {
-        preferences.edit().putString(preferenceKey, DocumentsContract.getDocumentId(document)).apply();
-    }
-
-    private Uri createDirectory(Uri parent, String name) throws Exception {
-        Uri directory = DocumentsContract.createDocument(
-                activity.getContentResolver(), parent, DIRECTORY_MIME, name);
-        if (directory == null) throw new IOException("Could not create " + name + ".");
-        return directory;
-    }
-
-
-    private static boolean isPluginId(String id) {
-        return id != null && id.length() <= 64 && id.matches("[a-z0-9][a-z0-9._-]*") && !id.contains("..");
-    }
-
-    private static boolean safePluginFileName(String name) {
-        return name != null && name.length() <= 100 && !name.contains("..")
-                && name.matches("[A-Za-z0-9][A-Za-z0-9._-]*");
     }
 
     byte[] readImage(String fileName) throws Exception {
@@ -491,7 +173,7 @@ final class NovelStorage {
             copy(in, out);
             byte[] contents = out.toByteArray();
             if (writeImage(fileName, contents) && !legacyFile.delete()) {
-                android.util.Log.w("NovelReader", "Could not remove migrated cover " + fileName);
+                android.util.Log.w("ManhwaReader", "Could not remove migrated cover " + fileName);
             }
             return contents;
         }
@@ -522,7 +204,7 @@ final class NovelStorage {
             return true;
         } catch (Exception error) {
             lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            android.util.Log.e("NovelReader", "Could not save cover", error);
+            android.util.Log.e("ManhwaReader", "Could not save cover", error);
             return false;
         }
     }
@@ -531,7 +213,7 @@ final class NovelStorage {
         if (!supportedImageName(fileName)) return;
         File cachedFile = coverCacheFile(fileName);
         if (cachedFile.exists() && !cachedFile.delete()) {
-            android.util.Log.w("NovelReader", "Could not remove cached cover " + fileName);
+            android.util.Log.w("ManhwaReader", "Could not remove cached cover " + fileName);
         }
         try {
             Uri coverDir = coverDirectoryUri(false);
@@ -544,21 +226,21 @@ final class NovelStorage {
             deleteLegacyImage(fileName);
             File oldFile = legacyPrivateCoverFile(fileName);
             if (oldFile.exists() && !oldFile.delete()) {
-                android.util.Log.w("NovelReader", "Could not delete legacy cover " + fileName);
+                android.util.Log.w("ManhwaReader", "Could not delete legacy cover " + fileName);
             }
         } catch (Exception error) {
-            android.util.Log.w("NovelReader", "Could not delete " + fileName, error);
+            android.util.Log.w("ManhwaReader", "Could not delete " + fileName, error);
         }
     }
 
-    /** Moves old covers into NovelReader/.covers and prevents gallery indexing with .nomedia. */
+    /** Moves old covers into ManhwaReader/.covers and prevents gallery indexing with .nomedia. */
     void migrateLegacyImages() {
         Uri coverDir;
         try {
             coverDir = coverDirectoryUri(true);
             ensureMediaHidden(coverDir);
         } catch (Exception error) {
-            android.util.Log.w("NovelReader", "Could not initialize hidden cover folder", error);
+            android.util.Log.w("ManhwaReader", "Could not initialize hidden cover folder", error);
             return;
         }
 
@@ -569,7 +251,7 @@ final class NovelStorage {
                 if (contents == null || !writeImage(fileName, contents)) continue;
                 deleteLegacyImage(fileName);
             } catch (Exception error) {
-                android.util.Log.w("NovelReader", "Could not migrate cover " + fileName, error);
+                android.util.Log.w("ManhwaReader", "Could not migrate cover " + fileName, error);
             }
         }
 
@@ -586,9 +268,9 @@ final class NovelStorage {
                     contents = out.toByteArray();
                 }
                 if (!writeImage(fileName, contents)) continue;
-                if (!oldFile.delete()) android.util.Log.w("NovelReader", "Could not remove migrated cover " + fileName);
+                if (!oldFile.delete()) android.util.Log.w("ManhwaReader", "Could not remove migrated cover " + fileName);
             } catch (Exception error) {
-                android.util.Log.w("NovelReader", "Could not migrate private cover " + fileName, error);
+                android.util.Log.w("ManhwaReader", "Could not migrate private cover " + fileName, error);
             }
         }
     }
@@ -596,7 +278,7 @@ final class NovelStorage {
     private Uri coverDirectoryUri(boolean create) throws Exception {
         Uri root = directoryUri();
         if (root == null) {
-            if (create) throw new IOException("No NovelReader folder is selected.");
+            if (create) throw new IOException("No ManhwaReader folder is selected.");
             return null;
         }
         if (root.equals(cachedCoverRoot) && coverDirectoryResolved) {
@@ -618,12 +300,12 @@ final class NovelStorage {
         coverDirectoryResolved = true;
         if (covers != null && !covers.equals(indexedCoverDirectory)) clearCoverIndex();
         if (covers == null) {
-            if (create) throw new IOException("Could not create NovelReader/.covers.");
+            if (create) throw new IOException("Could not create ManhwaReader/.covers.");
             return null;
         }
         String mime = activity.getContentResolver().getType(covers);
         if (mime != null && !DIRECTORY_MIME.equals(mime)) {
-            throw new IOException("NovelReader/.covers is not a directory.");
+            throw new IOException("ManhwaReader/.covers is not a directory.");
         }
         return covers;
     }
@@ -686,8 +368,8 @@ final class NovelStorage {
             file.setLastModified(System.currentTimeMillis());
             return output.toByteArray();
         } catch (IOException error) {
-            android.util.Log.w("NovelReader", "Could not read cached cover " + fileName, error);
-            if (!file.delete()) android.util.Log.w("NovelReader", "Could not remove invalid cover cache " + fileName);
+            android.util.Log.w("ManhwaReader", "Could not read cached cover " + fileName, error);
+            if (!file.delete()) android.util.Log.w("ManhwaReader", "Could not remove invalid cover cache " + fileName);
             return null;
         }
     }
@@ -705,9 +387,9 @@ final class NovelStorage {
             trimCoverCache(target);
         } catch (IOException error) {
             if (temporary.exists() && !temporary.delete()) {
-                android.util.Log.w("NovelReader", "Could not remove temporary cover cache", error);
+                android.util.Log.w("ManhwaReader", "Could not remove temporary cover cache", error);
             }
-            android.util.Log.w("NovelReader", "Could not cache cover " + fileName, error);
+            android.util.Log.w("ManhwaReader", "Could not cache cover " + fileName, error);
         }
     }
 
@@ -758,7 +440,7 @@ final class NovelStorage {
             Uri file = findChild(dir, fileName);
             if (file != null) DocumentsContract.deleteDocument(activity.getContentResolver(), file);
         } catch (Exception error) {
-            android.util.Log.w("NovelReader", "Could not remove old cover " + fileName, error);
+            android.util.Log.w("ManhwaReader", "Could not remove old cover " + fileName, error);
         }
     }
     private static void copy(InputStream in, OutputStream out) throws IOException {

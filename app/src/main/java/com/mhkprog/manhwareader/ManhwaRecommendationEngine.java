@@ -1,4 +1,4 @@
-package com.novelreader.app;
+package com.mhkprog.manhwareader;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -9,12 +9,12 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
-/** Small dependency-free recommendation helper. One candidate represents one book. */
-final class BookRecommendationEngine {
+/** Small dependency-free recommendation helper. One candidate represents one manhwa. */
+final class ManhwaRecommendationEngine {
     private static final int DEFAULT_WEIGHT = 10;
     private static final double EXPLORATION_RATE = 0.15;
 
-    static final class Book {
+    static final class Manhwa {
         final long id;
         final String title;
         final List<String> genres;
@@ -22,12 +22,9 @@ final class BookRecommendationEngine {
         final int interestRating;
         final boolean favorite;
         final boolean favoriteAuthor;
-        final long wordsRead;
-        final long totalWordsRead;
 
-        Book(long id, String title, List<String> genres, String author,
-             int interestRating, boolean favorite, boolean favoriteAuthor,
-             long wordsRead, long totalWordsRead) {
+        Manhwa(long id, String title, List<String> genres, String author,
+             int interestRating, boolean favorite, boolean favoriteAuthor) {
             this.id = id;
             this.title = title == null ? "" : title;
             this.genres = genres == null ? new ArrayList<>() : new ArrayList<>(genres);
@@ -35,8 +32,6 @@ final class BookRecommendationEngine {
             this.interestRating = interestRating;
             this.favorite = favorite;
             this.favoriteAuthor = favoriteAuthor;
-            this.wordsRead = Math.max(0, wordsRead);
-            this.totalWordsRead = Math.max(0, totalWordsRead);
         }
     }
 
@@ -59,21 +54,21 @@ final class BookRecommendationEngine {
     private final UserPreferences preferences;
     private final Random random = new Random();
 
-    BookRecommendationEngine(UserPreferences preferences) {
+    ManhwaRecommendationEngine(UserPreferences preferences) {
         this.preferences = preferences;
     }
 
-    Book recommendBook(List<Book> books, Set<Long> seenBookIds) {
-        if (books == null || books.isEmpty()) return null;
-        List<Book> candidates = new ArrayList<>();
+    Manhwa recommendManhwa(List<Manhwa> manhwas, Set<Long> seenManhwaIds) {
+        if (manhwas == null || manhwas.isEmpty()) return null;
+        List<Manhwa> candidates = new ArrayList<>();
         Set<Long> ids = new HashSet<>();
-        for (Book book : books) {
-            if (book == null || !ids.add(book.id)) continue;
-            if (seenBookIds == null || !seenBookIds.contains(book.id)) candidates.add(book);
+        for (Manhwa manhwa : manhwas) {
+            if (manhwa == null || !ids.add(manhwa.id)) continue;
+            if (seenManhwaIds == null || !seenManhwaIds.contains(manhwa.id)) candidates.add(manhwa);
         }
-        // Start a fresh recommendation cycle after every eligible book has appeared once.
+        // Start a fresh recommendation cycle after every eligible manhwa has appeared once.
         if (candidates.isEmpty()) {
-            for (Book book : books) if (book != null) candidates.add(book);
+            for (Manhwa manhwa : manhwas) if (manhwa != null) candidates.add(manhwa);
             if (candidates.isEmpty()) return null;
         }
         if (candidates.size() == 1 || random.nextDouble() < EXPLORATION_RATE) {
@@ -81,34 +76,32 @@ final class BookRecommendationEngine {
         }
 
         double total = 0;
-        for (Book book : candidates) total += bookWeight(book);
+        for (Manhwa manhwa : candidates) total += manhwaWeight(manhwa);
         if (total <= 0) return candidates.get(random.nextInt(candidates.size()));
         double selection = random.nextDouble() * total;
-        for (Book book : candidates) {
-            selection -= bookWeight(book);
-            if (selection < 0) return book;
+        for (Manhwa manhwa : candidates) {
+            selection -= manhwaWeight(manhwa);
+            if (selection < 0) return manhwa;
         }
         return candidates.get(candidates.size() - 1);
     }
 
-    private double bookWeight(Book book) {
+    private double manhwaWeight(Manhwa manhwa) {
         Set<String> uniqueGenres = new HashSet<>();
         double totalGenreWeight = 0;
-        for (String genre : book.genres) {
+        for (String genre : manhwa.genres) {
             String key = normalize(genre);
             if (key.isEmpty() || "other".equals(key) || !uniqueGenres.add(key)) continue;
             totalGenreWeight += preferences.weightFor(key);
         }
-        // Averaging prevents books with many tags from receiving extra lottery tickets.
+        // Averaging prevents manhwas with many tags from receiving extra lottery tickets.
         double genreWeight = uniqueGenres.isEmpty() ? DEFAULT_WEIGHT
                 : totalGenreWeight / uniqueGenres.size();
-        double ratingWeight = book.interestRating < 1 || book.interestRating > 5
-                ? 1.0 : new double[]{0, 0.35, 0.60, 1.0, 1.50, 2.10}[book.interestRating];
-        double personalWeight = (book.favorite ? 1.12 : 1.0)
-                * (book.favoriteAuthor ? 1.12 : 1.0);
-        double readingShareWeight = book.totalWordsRead == 0 ? 1.0
-                : Math.max(0.05, Math.min(1.0, book.wordsRead / (double) book.totalWordsRead));
-        return Math.max(0.05, genreWeight * ratingWeight * personalWeight * readingShareWeight);
+        double ratingWeight = manhwa.interestRating < 1 || manhwa.interestRating > 5
+                ? 1.0 : new double[]{0, 0.35, 0.60, 1.0, 1.50, 2.10}[manhwa.interestRating];
+        double personalWeight = (manhwa.favorite ? 1.12 : 1.0)
+                * (manhwa.favoriteAuthor ? 1.12 : 1.0);
+        return Math.max(0.05, genreWeight * ratingWeight * personalWeight);
     }
 
     private static String normalize(String value) {
