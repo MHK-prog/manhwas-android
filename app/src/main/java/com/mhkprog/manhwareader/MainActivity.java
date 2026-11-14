@@ -3306,7 +3306,7 @@ public final class MainActivity extends Activity {
                 capsuleContents.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
                 TextView mode = text(animeMode ? "انیمه" : "مانهوا", 14, contrastOnAccent());
                 mode.setGravity(Gravity.CENTER);
-                NativeIconView switchMark = new NativeIconView(this, "switch", contrastOnAccent());
+                NativeIconView switchMark = new NativeIconView(this, "swap", contrastOnAccent());
                 LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(dp(17), dp(17));
                 markParams.rightMargin = dp(7);
                 capsuleContents.addView(switchMark, markParams);
@@ -4872,7 +4872,7 @@ public final class MainActivity extends Activity {
             case "favorite": return "افزودن به علاقه‌مندی‌ها";
             case "select": return "انتخاب مانهوا";
             case "range": return "آماده‌کردن بازهٔ چپترها";
-            case "switch": return "تغییر فهرست";
+            case "swap": return "تغییر فهرست";
             case "thumb_up": return "لایک";
             case "thumb_down": return "دیس لایک";
             default: return icon;
