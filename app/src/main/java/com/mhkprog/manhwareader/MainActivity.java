@@ -153,7 +153,7 @@ public final class MainActivity extends Activity {
     };
     private static final int BUILTIN_THEME_COUNT = FLAT_ACCENT_COLORS.length + GRADIENT_COLORS.length;
     private static final int MAX_GENRE_WEIGHT = 50;
-    private static final String VERSION = "1.4.30";
+    private static final String VERSION = "1.4.31";
     private static final Pattern CHAPTER_NUMBER_PATTERN = Pattern.compile(
             "(?i)^(?:chapter|ch)?\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\b.*)?$");
 
@@ -698,6 +698,7 @@ public final class MainActivity extends Activity {
         activeGenreFilter.clear();
         selectedManhwaIds.clear();
         selectedTagNames.clear();
+        if (drawerPanel != null) buildDrawer();
     }
 
     private String contentArrayKey() { return animeMode ? "animes" : "manhwas"; }
@@ -1124,14 +1125,9 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(-1, dp(56));
         headingParams.bottomMargin = dp(10);
         drawerPanel.addView(heading, headingParams);
-        addDrawerAction(drawerPanel, "پیشنهاد مانهوا", "manhwa", 0xFFFFB45E, () -> {
+        addDrawerAction(drawerPanel, animeMode ? "پیشنهاد انیمه" : "پیشنهاد مانهوا",
+                animeMode ? "anime" : "manhwa", 0xFFFFB45E, () -> {
             closeDrawer();
-            setAnimeMode(false);
-            showRecommendation();
-        }, false);
-        addDrawerAction(drawerPanel, "پیشنهاد انیمه", "anime", 0xFFFFB45E, () -> {
-            closeDrawer();
-            setAnimeMode(true);
             showRecommendation();
         }, false);
         addDrawerAction(drawerPanel, "پیشرفت", "chart", 0xFF69D2A0, () -> {
@@ -3304,12 +3300,9 @@ public final class MainActivity extends Activity {
                 LinearLayout capsuleContents = new LinearLayout(this);
                 capsuleContents.setGravity(Gravity.CENTER);
                 capsuleContents.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-                TextView mode = text(animeMode ? "انیمه" : "مانهوا", 14, contrastOnAccent());
+                TextView mode = text(animeMode ? "فهرست انیمه" : "فهرست مانهوا", 14, contrastOnAccent());
+                mode.setSingleLine(true);
                 mode.setGravity(Gravity.CENTER);
-                NativeIconView switchMark = new NativeIconView(this, "swap", contrastOnAccent());
-                LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(dp(17), dp(17));
-                markParams.rightMargin = dp(7);
-                capsuleContents.addView(switchMark, markParams);
                 capsuleContents.addView(mode, new LinearLayout.LayoutParams(-2, -2));
                 pill.addView(capsuleContents, new FrameLayout.LayoutParams(-2, -1, Gravity.CENTER));
                 pill.setContentDescription("تغییر فهرست بین مانهوا و انیمه");
@@ -5074,7 +5067,7 @@ public final class MainActivity extends Activity {
 
     private final class SwipeRoot extends FrameLayout {
         private float startX, startY, startProgress, lastProgress;
-        private boolean gestureCandidate, trackingDrawer;
+        private boolean gestureCandidate, trackingDrawer, emptyAnimeShelf;
 
         SwipeRoot(Context context) { super(context); }
 
@@ -5089,8 +5082,10 @@ public final class MainActivity extends Activity {
                         ? Math.max(0f, Math.min(1f, 1f - drawerPanel.getTranslationX() / width))
                         : drawerOpen ? 1f : 0f;
                 int drawerEdgeWidth = Math.max(dp(72), getWidth() / 4);
+                emptyAnimeShelf = "allAnimes".equals(page)
+                        && (manhwaAdapter == null || manhwaAdapter.getCount() == 0);
                 gestureCandidate = drawerVisible && startProgress > 0f
-                        || drawerSwipeAvailable() && startX >= getWidth() - drawerEdgeWidth;
+                        || drawerSwipeAvailable() && (startX >= getWidth() - drawerEdgeWidth || emptyAnimeShelf);
                 trackingDrawer = false;
                 lastProgress = startProgress;
                 return super.dispatchTouchEvent(event);
@@ -5101,7 +5096,9 @@ public final class MainActivity extends Activity {
                 float dy = event.getY() - startY;
                 boolean opening = dx < 0f && startProgress < 1f;
                 boolean closing = dx > 0f && startProgress > 0f;
-                if (Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy) * 1.15f
+                float horizontalBias = emptyAnimeShelf ? 0.9f : 1.15f;
+                int horizontalSlop = emptyAnimeShelf ? dp(5) : dp(8);
+                if (Math.abs(dx) > horizontalSlop && Math.abs(dx) > Math.abs(dy) * horizontalBias
                         && (opening || closing)) {
                     trackingDrawer = true;
                     beginDrawerGesture(startProgress);
