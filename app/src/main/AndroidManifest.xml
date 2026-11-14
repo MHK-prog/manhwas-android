@@ -6,8 +6,8 @@
     <application
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="false"
-        android:icon="@drawable/manhwa_reader_icon"
-        android:roundIcon="@drawable/manhwa_reader_icon"
+        android:icon="@drawable/reader_icon_512"
+        android:roundIcon="@drawable/reader_icon_192"
         android:label="مانهواخوان"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"

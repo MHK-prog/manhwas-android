@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
-/** Small dependency-free recommendation helper. One candidate represents one manhwa. */
+/** Small dependency-free recommendation helper. */
 final class ManhwaRecommendationEngine {
     private static final int DEFAULT_WEIGHT = 10;
     private static final double EXPLORATION_RATE = 0.15;
@@ -18,20 +18,15 @@ final class ManhwaRecommendationEngine {
         final long id;
         final String title;
         final List<String> genres;
-        final String author;
-        final int interestRating;
         final boolean favorite;
-        final boolean favoriteAuthor;
+        final boolean disliked;
 
-        Manhwa(long id, String title, List<String> genres, String author,
-             int interestRating, boolean favorite, boolean favoriteAuthor) {
+        Manhwa(long id, String title, List<String> genres, boolean favorite, boolean disliked) {
             this.id = id;
             this.title = title == null ? "" : title;
             this.genres = genres == null ? new ArrayList<>() : new ArrayList<>(genres);
-            this.author = author == null ? "" : author;
-            this.interestRating = interestRating;
             this.favorite = favorite;
-            this.favoriteAuthor = favoriteAuthor;
+            this.disliked = disliked;
         }
     }
 
@@ -97,11 +92,8 @@ final class ManhwaRecommendationEngine {
         // Averaging prevents manhwas with many tags from receiving extra lottery tickets.
         double genreWeight = uniqueGenres.isEmpty() ? DEFAULT_WEIGHT
                 : totalGenreWeight / uniqueGenres.size();
-        double ratingWeight = manhwa.interestRating < 1 || manhwa.interestRating > 5
-                ? 1.0 : new double[]{0, 0.35, 0.60, 1.0, 1.50, 2.10}[manhwa.interestRating];
-        double personalWeight = (manhwa.favorite ? 1.12 : 1.0)
-                * (manhwa.favoriteAuthor ? 1.12 : 1.0);
-        return Math.max(0.05, genreWeight * ratingWeight * personalWeight);
+        double personalWeight = manhwa.disliked ? 0.25 : manhwa.favorite ? 1.5 : 1.0;
+        return Math.max(0.05, genreWeight * personalWeight);
     }
 
     private static String normalize(String value) {
