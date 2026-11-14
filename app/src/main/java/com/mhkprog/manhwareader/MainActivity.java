@@ -74,6 +74,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -153,9 +154,11 @@ public final class MainActivity extends Activity {
     };
     private static final int BUILTIN_THEME_COUNT = FLAT_ACCENT_COLORS.length + GRADIENT_COLORS.length;
     private static final int MAX_GENRE_WEIGHT = 50;
-    private static final String VERSION = "1.4.31";
+    private static final String VERSION = "1.4.32";
     private static final Pattern CHAPTER_NUMBER_PATTERN = Pattern.compile(
             "(?i)^(?:chapter|ch)?\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\b.*)?$");
+    private static final Pattern ANIME_SEASON_RANGE_PATTERN = Pattern.compile(
+            "(?i)^(?:S(?:EASON)?\\s*)?([0-9]+)\\s*[:：,]\\s*([0-9]+)\\s*(?:-|TO)\\s*([0-9]+)$");
 
     private int BG = BG_DARK;
     private int SURFACE = SURFACE_DARK;
@@ -201,6 +204,10 @@ public final class MainActivity extends Activity {
     private String chaptersReturnPage = "allManhwas";
     private String activeManhwaId;
     private boolean animeMode;
+    private String manhwaInfoScrollItemId;
+    private int manhwaInfoScrollY;
+    private String chapterScrollItemId;
+    private int chapterScrollY;
     private boolean drawerOpen;
     private boolean returnToSettingsAfterPicker;
     private String activeReorderType;
@@ -229,7 +236,8 @@ public final class MainActivity extends Activity {
     private GridView chaptersGrid;
     private ManhwaAdapter manhwaAdapter;
     private ChapterAdapter chapterAdapter;
-    private TextView chapterChecklistCount;
+    private ScrollView chapterSeasonScroll;
+    private ScrollView manhwaInfoScroll;
     private ScrollView settingsScroll;
     private TextView toastView;
     private FrameLayout splashOverlay;
@@ -254,6 +262,7 @@ public final class MainActivity extends Activity {
         }
         vazir = Typeface.createFromAsset(getAssets(), "fonts/Vazirmatn-Regular.ttf");
         storage = new ManhwaStorage(this);
+        animeMode = getSharedPreferences("app_settings", MODE_PRIVATE).getBoolean("anime_mode", false);
         recommendationState = getSharedPreferences("recommendations", MODE_PRIVATE);
         animeRecommendationState = getSharedPreferences("anime_recommendations", MODE_PRIVATE);
         loadRecommendationState(false);
@@ -695,6 +704,7 @@ public final class MainActivity extends Activity {
 
     private void setAnimeMode(boolean anime) {
         animeMode = anime;
+        getSharedPreferences("app_settings", MODE_PRIVATE).edit().putBoolean("anime_mode", anime).apply();
         activeGenreFilter.clear();
         selectedManhwaIds.clear();
         selectedTagNames.clear();
@@ -964,7 +974,12 @@ public final class MainActivity extends Activity {
             for (int j = 0; j < episodes.length(); j++) {
                 JSONObject episode = episodes.optJSONObject(j);
                 if (episode == null) { episode = new JSONObject(); episodes.put(j, episode); }
-                if (episode.optString("title").trim().isEmpty()) episode.put("title", "قسمت " + (j + 1));
+                int defaultEpisodeNumber = Math.max(1, episode.optInt("storageIndex", j + 1));
+                int seasonNumber = Math.max(1, episode.optInt("seasonNumber", 1));
+                int episodeNumber = Math.max(1, episode.optInt("episodeNumber", defaultEpisodeNumber));
+                episode.put("seasonNumber", seasonNumber);
+                episode.put("episodeNumber", episodeNumber);
+                if (episode.optString("title").trim().isEmpty()) episode.put("title", "قسمت " + episodeNumber);
                 episode.put("title", englishDigits(episode.optString("title")));
                 int state = episode.has("state") ? episode.optInt("state", 0)
                         : episode.optBoolean("done", false) ? 2 : 0;
@@ -1169,15 +1184,16 @@ public final class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         row.setPadding(dp(14), 0, dp(14), 0);
-        row.setBackground(drawerActionBackground(PURPLE));
-        NativeIconView icon = new NativeIconView(this, "settings", PURPLE);
+        int primaryText = contrastOnColor(PURPLE);
+        row.setBackground(drawerPrimaryBackground());
+        NativeIconView icon = new NativeIconView(this, "settings", primaryText);
         row.addView(icon, new LinearLayout.LayoutParams(dp(22), dp(22)));
-        TextView label = text("تنظیمات", 15, TEXT);
+        TextView label = text("تنظیمات", 15, primaryText);
         label.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(0, -1, 1);
         labelParams.leftMargin = dp(12);
         row.addView(label, labelParams);
-        drawerSettingsChevron = new NativeIconView(this, "dropdown", PURPLE);
+        drawerSettingsChevron = new NativeIconView(this, "dropdown", primaryText);
         row.addView(drawerSettingsChevron, new LinearLayout.LayoutParams(dp(18), dp(18)));
         drawerSettingsChevron.setRotation(drawerSettingsExpanded ? 180f : 0f);
         row.setClickable(true);
@@ -1190,8 +1206,12 @@ public final class MainActivity extends Activity {
 
     private void addDrawerAction(LinearLayout parent, String label, String icon, int accent,
                                  Runnable action, boolean nested) {
-        LinearLayout button = (LinearLayout) textButton(label, icon, accent, action);
-        button.setBackground(drawerActionBackground(accent));
+        int iconColor = nested ? themeSecondaryColor() : contrastOnColor(PURPLE);
+        LinearLayout button = (LinearLayout) textButton(label, icon, iconColor, action);
+        if (!nested && button.getChildCount() > 1 && button.getChildAt(1) instanceof TextView) {
+            ((TextView) button.getChildAt(1)).setTextColor(iconColor);
+        }
+        button.setBackground(nested ? drawerActionBackground(accent) : drawerPrimaryBackground());
         parent.addView(button, drawerActionParams(nested));
     }
 
@@ -1204,11 +1224,19 @@ public final class MainActivity extends Activity {
     }
 
     private GradientDrawable drawerActionBackground(int accent) {
-        int fillAlpha = lightTheme ? 18 : 24;
-        int strokeAlpha = lightTheme ? 65 : 85;
-        int fill = Color.argb(fillAlpha, Color.red(accent), Color.green(accent), Color.blue(accent));
-        int stroke = Color.argb(strokeAlpha, Color.red(accent), Color.green(accent), Color.blue(accent));
-        return roundDrawable(fill, stroke, 14);
+        return roundDrawable(SURFACE, themedStrokeColor(accent), 14);
+    }
+
+    private GradientDrawable drawerPrimaryBackground() {
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(14));
+        if (isGradientTheme(accentIndex)) {
+            applyGradientTheme(background, accentIndex);
+        } else {
+            background.setOrientation(GradientDrawable.Orientation.LEFT_RIGHT);
+            background.setColors(new int[]{PURPLE, themeSecondaryColor()});
+        }
+        return background;
     }
 
     private void toggleDrawerSettings() {
@@ -1287,6 +1315,14 @@ public final class MainActivity extends Activity {
             returnToSettingsAfterPicker = true;
             chooseFolder();
         }), fieldParams());
+
+        TextView promptsTitle = text("پرامپت‌های تولید اطلاعات", 15, MUTED);
+        promptsTitle.setPadding(0, dp(16), 0, dp(7));
+        body.addView(promptsTitle);
+        body.addView(textButton("ویرایش پرامپت مانهوا", "edit", themeSecondaryColor(),
+                () -> showJsonPromptEditor(false)), fieldParams());
+        body.addView(textButton("ویرایش پرامپت انیمه", "edit", themeSecondaryColor(),
+                () -> showJsonPromptEditor(true)), fieldParams());
 
         scroll.addView(body);
         appColumn.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -3026,6 +3062,11 @@ public final class MainActivity extends Activity {
 
     private void showManhwaInfo(JSONObject manhwa) {
         if (manhwa == null) { showDashboard(); return; }
+        String scrollItemKey = (animeMode ? "anime:" : "manhwa:") + manhwa.optString("id");
+        int restoreScrollY = scrollItemKey.equals(manhwaInfoScrollItemId)
+                ? (manhwaInfoScroll == null ? manhwaInfoScrollY : manhwaInfoScroll.getScrollY()) : 0;
+        manhwaInfoScrollItemId = scrollItemKey;
+        manhwaInfoScrollY = restoreScrollY;
         page = animeMode ? "animeInfo" : "manhwaInfo";
         activeManhwaId = manhwa.optString("id");
         appColumn.removeAllViews();
@@ -3097,7 +3138,10 @@ public final class MainActivity extends Activity {
         body.addView(chaptersButton, chaptersButtonParams);
 
         scroll.addView(body);
+        manhwaInfoScroll = scroll;
+        scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> manhwaInfoScrollY = y);
         appColumn.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        scroll.post(() -> scroll.scrollTo(0, Math.max(0, restoreScrollY)));
     }
 
     private LinearLayout addManhwaInfoLine(LinearLayout body, String label, String value) {
@@ -3386,8 +3430,15 @@ public final class MainActivity extends Activity {
     private void showChapters() {
         JSONObject manhwa = activeManhwa();
         if (manhwa == null) { showDashboard(); return; }
-        page = "chapters"; appColumn.removeAllViews();
-        animatePageTransition();
+        String scrollItemKey = (animeMode ? "anime:" : "manhwa:") + manhwa.optString("id");
+        boolean continueAnimePosition = animeMode && "chapters".equals(page)
+                && scrollItemKey.equals(chapterScrollItemId);
+        int restoreAnimeScrollY = continueAnimePosition
+                ? (chapterSeasonScroll == null ? chapterScrollY : chapterSeasonScroll.getScrollY()) : -1;
+        page = "chapters";
+        chapterScrollItemId = scrollItemKey;
+        appColumn.removeAllViews();
+        if (!continueAnimePosition) animatePageTransition();
         addChaptersHeader(manhwa);
         JSONArray manhwaGenres = manhwa.optJSONArray("genres");
         if (manhwaGenres != null && manhwaGenres.length() > 0) {
@@ -3404,23 +3455,24 @@ public final class MainActivity extends Activity {
             genreScroller.addView(genreLine, new HorizontalScrollView.LayoutParams(-2, dp(36)));
             appColumn.addView(genreScroller, new LinearLayout.LayoutParams(-1, dp(38)));
         }
-        LinearLayout checklistSummary = new LinearLayout(this);
-        checklistSummary.setGravity(Gravity.CENTER_VERTICAL);
-        checklistSummary.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        checklistSummary.setPadding(dp(14), 0, dp(14), 0);
-        checklistSummary.setBackground(roundDrawable(SURFACE, 0xFF302A38, 12));
-        TextView checklistLabel = text(contentUnitPlural() + " دیده‌شده", 13, MUTED);
-        checklistSummary.addView(checklistLabel, new LinearLayout.LayoutParams(0, -1, 1));
-        chapterChecklistCount = text("", 13, PURPLE);
-        checklistSummary.addView(chapterChecklistCount, new LinearLayout.LayoutParams(-2, -1));
-        LinearLayout.LayoutParams checklistParams = new LinearLayout.LayoutParams(-1, dp(46));
-        checklistParams.leftMargin = dp(12);
-        checklistParams.rightMargin = dp(12);
-        checklistParams.topMargin = dp(4);
-        checklistParams.bottomMargin = dp(4);
-        appColumn.addView(checklistSummary, checklistParams);
-        updateChapterChecklistSummary();
         appColumn.addView(chapterStateLegend(), new LinearLayout.LayoutParams(-1, dp(30)));
+        chaptersGrid = null;
+        chapterAdapter = null;
+        chapterSeasonScroll = null;
+        if (animeMode) {
+            ScrollView seasonScroll = new ScrollView(this);
+            chapterSeasonScroll = seasonScroll;
+            seasonScroll.setVerticalScrollBarEnabled(false);
+            seasonScroll.setHorizontalScrollBarEnabled(false);
+            LinearLayout seasonContent = new LinearLayout(this);
+            seasonContent.setOrientation(LinearLayout.VERTICAL);
+            seasonContent.setPadding(dp(12), dp(8), dp(12), dp(12));
+            seasonScroll.addView(seasonContent);
+            renderAnimeSeasonChecklist(manhwa, seasonContent, seasonScroll, restoreAnimeScrollY);
+            appColumn.addView(seasonScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+            seasonScroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> chapterScrollY = y);
+        } else {
+            chapterSeasonScroll = null;
         chaptersGrid = new GridView(this);
         chaptersGrid.setNumColumns(GridView.AUTO_FIT);
         chaptersGrid.setColumnWidth(dp(60));
@@ -3439,6 +3491,99 @@ public final class MainActivity extends Activity {
         appColumn.addView(chaptersGrid, new LinearLayout.LayoutParams(-1, 0, 1));
         int lastSeen = lastSeenChapter(manhwa);
         chaptersGrid.post(() -> chaptersGrid.setSelectionFromTop(lastSeen, Math.max(dp(48), chaptersGrid.getHeight() / 3)));
+        }
+    }
+
+    private void renderAnimeSeasonChecklist(JSONObject anime, LinearLayout content,
+                                             ScrollView seasonScroll, int restoreScrollY) {
+        JSONArray episodes = checklistArray(anime);
+        if (episodes == null || episodes.length() == 0) {
+            TextView empty = emptyLabel("هنوز قسمتی ثبت نشده است");
+            content.addView(empty, new LinearLayout.LayoutParams(-1, dp(160)));
+            return;
+        }
+        java.util.TreeMap<Integer, ArrayList<Integer>> bySeason = new java.util.TreeMap<>();
+        for (int i = 0; i < episodes.length(); i++) {
+            JSONObject episode = episodes.optJSONObject(i);
+            int season = animeSeasonNumber(episode);
+            ArrayList<Integer> positions = bySeason.get(season);
+            if (positions == null) { positions = new ArrayList<>(); bySeason.put(season, positions); }
+            positions.add(i);
+        }
+        Comparator<Integer> episodeOrder = (first, second) -> {
+            JSONObject firstEpisode = episodes.optJSONObject(first);
+            JSONObject secondEpisode = episodes.optJSONObject(second);
+            int numberOrder = Integer.compare(animeEpisodeNumber(firstEpisode, first),
+                    animeEpisodeNumber(secondEpisode, second));
+            return numberOrder != 0 ? numberOrder : Integer.compare(chapterStorageIndex(firstEpisode, first),
+                    chapterStorageIndex(secondEpisode, second));
+        };
+        int availableWidthDp = (int) (getResources().getDisplayMetrics().widthPixels
+                / getResources().getDisplayMetrics().density) - 24;
+        int columns = Math.max(3, Math.min(8, availableWidthDp / 68));
+        int lastSeenIndex = lastProgressedChapterIndex(anime);
+        View[] lastSeenCell = {null};
+        for (Map.Entry<Integer, ArrayList<Integer>> entry : bySeason.entrySet()) {
+            int seasonNumber = entry.getKey();
+            ArrayList<Integer> positions = entry.getValue();
+            Collections.sort(positions, episodeOrder);
+            LinearLayout section = new LinearLayout(this);
+            section.setOrientation(LinearLayout.VERTICAL);
+            section.setPadding(dp(10), dp(8), dp(10), dp(10));
+            section.setBackground(roundDrawable(SURFACE, themedStrokeColor(0xFF302A38), 12));
+            LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(-1, -2);
+            sectionParams.bottomMargin = dp(10);
+            content.addView(section, sectionParams);
+
+            LinearLayout heading = new LinearLayout(this);
+            heading.setGravity(Gravity.CENTER_VERTICAL);
+            heading.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            TextView name = text("فصل S" + formatCount(seasonNumber), 14, TEXT);
+            heading.addView(name, new LinearLayout.LayoutParams(0, dp(34), 1));
+            TextView count = text(formatCount(positions.size()) + " قسمت", 12, MUTED);
+            heading.addView(count, new LinearLayout.LayoutParams(-2, dp(34)));
+            section.addView(heading);
+
+            for (int start = 0; start < positions.size(); start += columns) {
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+                LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(46));
+                rowParams.topMargin = dp(5);
+                section.addView(row, rowParams);
+                for (int column = 0; column < columns; column++) {
+                    int localIndex = start + column;
+                    View cell;
+                    if (localIndex < positions.size()) {
+                        int episodeIndex = positions.get(localIndex);
+                        JSONObject episode = episodes.optJSONObject(episodeIndex);
+                        cell = createChapterCell(episode, episodeIndex);
+                        if (episodeIndex == lastSeenIndex) lastSeenCell[0] = cell;
+                    } else {
+                        cell = new View(this);
+                        cell.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                    }
+                    LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, dp(46), 1f);
+                    cellParams.leftMargin = dp(3);
+                    cellParams.rightMargin = dp(3);
+                    row.addView(cell, cellParams);
+                }
+            }
+        }
+        seasonScroll.post(() -> {
+            if (chapterSeasonScroll != seasonScroll || !"chapters".equals(page)) return;
+            if (restoreScrollY >= 0) {
+                seasonScroll.scrollTo(0, restoreScrollY);
+            } else if (lastSeenCell[0] != null) {
+                int[] cellLocation = new int[2];
+                int[] scrollLocation = new int[2];
+                lastSeenCell[0].getLocationOnScreen(cellLocation);
+                seasonScroll.getLocationOnScreen(scrollLocation);
+                int top = seasonScroll.getScrollY() + cellLocation[1] - scrollLocation[1];
+                seasonScroll.scrollTo(0, Math.max(0,
+                        top - (seasonScroll.getHeight() - lastSeenCell[0].getHeight()) / 2));
+            }
+        });
     }
 
     private void copyManhwaGenres(JSONObject manhwa) {
@@ -3481,26 +3626,75 @@ public final class MainActivity extends Activity {
             toast("امکان افزودن " + contentUnitPlural() + " بیشتر وجود ندارد.");
             return;
         }
-        EditText title = edit("نام " + contentUnitLabel(), false);
-        title.setText(contentUnitLabel() + " " + formatCount(chapters.length() + 1));
+        final EditText title;
+        final EditText seasonField;
+        LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        if (animeMode) {
+            int defaultSeason = 1;
+            int defaultEpisode = 1;
+            for (int i = 0; i < chapters.length(); i++) {
+                JSONObject episode = chapters.optJSONObject(i);
+                defaultSeason = Math.max(defaultSeason, animeSeasonNumber(episode));
+            }
+            for (int i = 0; i < chapters.length(); i++) {
+                JSONObject episode = chapters.optJSONObject(i);
+                if (animeSeasonNumber(episode) == defaultSeason) {
+                    defaultEpisode = Math.max(defaultEpisode, animeEpisodeNumber(episode, i) + 1);
+                }
+            }
+            seasonField = edit("شمارهٔ فصل", false);
+            seasonField.setInputType(InputType.TYPE_CLASS_NUMBER);
+            seasonField.setText(Integer.toString(defaultSeason));
+            title = edit("شمارهٔ قسمت", false);
+            title.setInputType(InputType.TYPE_CLASS_NUMBER);
+            title.setText(Integer.toString(defaultEpisode));
+            fields.addView(clearableInput(seasonField), fieldParams());
+            fields.addView(clearableInput(title), fieldParams());
+        } else {
+            seasonField = null;
+            title = edit("نام " + contentUnitLabel(), false);
+            title.setText(contentUnitLabel() + " " + formatCount(chapters.length() + 1));
+            fields.addView(clearableInput(title), fieldParams());
+        }
         title.setSelection(title.length());
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("افزودن " + contentUnitLabel())
-                .setView(dialogPadding(title)).setNegativeButton("لغو", null)
+                .setView(dialogPadding(fields)).setNegativeButton("لغو", null)
                 .setPositiveButton("افزودن", null).create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String label = title.getText().toString().trim();
-            if (label.isEmpty()) {
-                title.setError("نام " + contentUnitLabel() + " را وارد کنید");
-                return;
-            }
             String before = library.toString();
             JSONArray current = checklistArray(manhwa);
             if (current == null) current = new JSONArray();
             ensureChapterStorageIndexes(current);
             JSONObject chapter = newChapter();
-            putJson(chapter, "title", label);
+            String label = title.getText().toString().trim();
+            int insertAt;
+            if (animeMode) {
+                int seasonNumber = parseRangeNumber(seasonField.getText().toString());
+                int episodeNumber = parseRangeNumber(label);
+                if (seasonNumber < 1 || seasonNumber > 500) { seasonField.setError("شمارهٔ فصل معتبر نیست"); return; }
+                if (episodeNumber < 1 || episodeNumber > 5000) { title.setError("شمارهٔ قسمت معتبر نیست"); return; }
+                for (int i = 0; i < current.length(); i++) {
+                    JSONObject existingEpisode = current.optJSONObject(i);
+                    if (animeSeasonNumber(existingEpisode) == seasonNumber
+                            && animeEpisodeNumber(existingEpisode, i) == episodeNumber) {
+                        title.setError("این قسمت از فصل قبلاً ثبت شده است");
+                        return;
+                    }
+                }
+                putJson(chapter, "seasonNumber", seasonNumber);
+                putJson(chapter, "episodeNumber", episodeNumber);
+                putJson(chapter, "title", "قسمت " + episodeNumber);
+                insertAt = current.length();
+            } else {
+                if (label.isEmpty()) {
+                    title.setError("نام " + contentUnitLabel() + " را وارد کنید");
+                    return;
+                }
+                putJson(chapter, "title", label);
+                insertAt = chapterInsertionIndex(current, label);
+            }
             putJson(chapter, "storageIndex", current.length() + 1);
-            int insertAt = chapterInsertionIndex(current, label);
             JSONArray ordered = new JSONArray();
             for (int i = 0; i <= current.length(); i++) {
                 if (i == insertAt) ordered.put(chapter);
@@ -3527,78 +3721,133 @@ public final class MainActivity extends Activity {
         if (item == null || chapters == null || chapters.length() == 0) return;
         ensureChapterStorageIndexes(chapters);
         int firstUnread = -1;
+        int firstNumber = Integer.MAX_VALUE;
         int lastNumber = 0;
+        int defaultSeason = Integer.MAX_VALUE;
+        int firstUnreadEpisode = -1;
+        int lastEpisodeInDefaultSeason = 0;
         for (int i = 0; i < chapters.length(); i++) {
             JSONObject chapter = chapters.optJSONObject(i);
-            int number = chapterStorageIndex(chapter, i);
-            lastNumber = Math.max(lastNumber, number);
-            if (firstUnread < 0 && chapterState(chapter) == 0) firstUnread = number;
+            if (animeMode) {
+                int season = animeSeasonNumber(chapter);
+                int number = animeEpisodeNumber(chapter, i);
+                if (season < defaultSeason && chapterState(chapter) == 0) {
+                    defaultSeason = season;
+                    firstUnreadEpisode = number;
+                    lastEpisodeInDefaultSeason = number;
+                } else if (season == defaultSeason) {
+                    if (chapterState(chapter) == 0 && (firstUnreadEpisode < 0 || number < firstUnreadEpisode)) {
+                        firstUnreadEpisode = number;
+                    }
+                    lastEpisodeInDefaultSeason = Math.max(lastEpisodeInDefaultSeason, number);
+                }
+            } else {
+                int number = chapterStorageIndex(chapter, i);
+                firstNumber = Math.min(firstNumber, number);
+                lastNumber = Math.max(lastNumber, number);
+                if (firstUnread < 0 && chapterState(chapter) == 0) firstUnread = number;
+            }
         }
-        int fromDefault = firstUnread > 0 ? firstUnread : lastNumber + 1;
-        int toDefault = Math.max(fromDefault, lastNumber);
+        if (animeMode && defaultSeason == Integer.MAX_VALUE) {
+            for (int i = 0; i < chapters.length(); i++) {
+                defaultSeason = Math.min(defaultSeason, animeSeasonNumber(chapters.optJSONObject(i)));
+            }
+            firstUnreadEpisode = Integer.MAX_VALUE;
+            lastEpisodeInDefaultSeason = 0;
+            for (int i = 0; i < chapters.length(); i++) {
+                JSONObject episode = chapters.optJSONObject(i);
+                if (animeSeasonNumber(episode) != defaultSeason) continue;
+                int number = animeEpisodeNumber(episode, i);
+                firstUnreadEpisode = Math.min(firstUnreadEpisode, number);
+                lastEpisodeInDefaultSeason = Math.max(lastEpisodeInDefaultSeason, number);
+            }
+        }
+
         LinearLayout fields = new LinearLayout(this);
         fields.setOrientation(LinearLayout.VERTICAL);
         fields.setPadding(dp(8), dp(6), dp(8), dp(6));
+        EditText seasonField = animeMode ? edit("شمارهٔ فصل", false) : null;
+        if (seasonField != null) {
+            seasonField.setInputType(InputType.TYPE_CLASS_NUMBER);
+            seasonField.setText(Integer.toString(defaultSeason));
+            fields.addView(clearableInput(seasonField), fieldParams());
+        }
         EditText from = edit("از شماره", false);
         from.setInputType(InputType.TYPE_CLASS_NUMBER);
-        from.setText(formatCount(fromDefault));
+        int fromDefault = animeMode
+                ? (firstUnreadEpisode > 0 && firstUnreadEpisode != Integer.MAX_VALUE ? firstUnreadEpisode : 1)
+                : firstUnread > 0 ? firstUnread : Math.max(1, firstNumber);
+        int toDefault = animeMode ? Math.max(fromDefault, lastEpisodeInDefaultSeason)
+                : Math.max(fromDefault, lastNumber);
+        from.setText(Integer.toString(fromDefault));
         from.setSelection(from.length());
         EditText to = edit("تا شماره", false);
         to.setInputType(InputType.TYPE_CLASS_NUMBER);
-        to.setText(formatCount(toDefault));
+        to.setText(Integer.toString(toDefault));
         to.setSelection(to.length());
         fields.addView(clearableInput(from), fieldParams());
         fields.addView(clearableInput(to), fieldParams());
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("آماده‌کردن بازهٔ " + contentUnitPlural())
-                .setView(dialogPadding(fields)).setNegativeButton("لغو", null)
-                .setPositiveButton("آمادهٔ خواندن", null).create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            int start = parseRangeNumber(from.getText().toString());
-            int end = parseRangeNumber(to.getText().toString());
-            if (start < 1) { from.setError("شمارهٔ شروع را وارد کنید"); return; }
-            if (end < start) { to.setError("پایان بازه باید برابر یا بزرگ‌تر باشد"); return; }
-            String before = library.toString();
-            int changed = 0;
-            for (int i = 0; i < chapters.length(); i++) {
-                JSONObject chapter = chapters.optJSONObject(i);
-                int number = chapterStorageIndex(chapter, i);
-                if (number < start || number > end || chapterState(chapter) != 0) continue;
-                putJson(chapter, "state", 1);
-                if (chapter != null) chapter.remove("done");
-                changed++;
-            }
-            if (changed > 0 && !saveLibrary()) {
-                restoreLibrary(before);
-                return;
-            }
-            dialog.dismiss();
-            showChapters();
-        }));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
+        View readyButton = textButton("آمادهٔ خواندن", "check", themeSecondaryColor(), () -> { });
+        View readButton = textButton("خوانده‌شده", "check", PURPLE, () -> { });
+        View unreadButton = textButton("نخوانده", "close", MUTED, () -> { });
+        for (View button : new View[]{readyButton, readButton, unreadButton}) {
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(46));
+            params.topMargin = dp(6);
+            actions.addView(button, params);
+        }
+        fields.addView(actions);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("تغییر وضعیت بازهٔ " + contentUnitPlural())
+                .setView(dialogPadding(fields)).create();
         dialog.show();
         styleDialogWindow(dialog);
         dialog.getWindow().setSoftInputMode(WindowManagerFlags.ADJUST_RESIZE);
+
+        readyButton.setOnClickListener(v -> applyQuickChapterRange(from, to, seasonField, chapters, 1, dialog));
+        readButton.setOnClickListener(v -> applyQuickChapterRange(from, to, seasonField, chapters, 2, dialog));
+        unreadButton.setOnClickListener(v -> applyQuickChapterRange(from, to, seasonField, chapters, 0, dialog));
+    }
+
+    private void applyQuickChapterRange(EditText from, EditText to, EditText seasonField,
+                                        JSONArray chapters, int state, AlertDialog dialog) {
+        int start = parseRangeNumber(from.getText().toString());
+        int end = parseRangeNumber(to.getText().toString());
+        if (start < 1) { from.setError("شمارهٔ شروع را وارد کنید"); return; }
+        if (end < start) { to.setError("پایان بازه باید برابر یا بزرگ‌تر باشد"); return; }
+        int season = 0;
+        if (animeMode) {
+            season = parseRangeNumber(seasonField == null ? "" : seasonField.getText().toString());
+            if (season < 1) { if (seasonField != null) seasonField.setError("شمارهٔ فصل را وارد کنید"); return; }
+        }
+        String before = library.toString();
+        int changed = 0;
+        for (int i = 0; i < chapters.length(); i++) {
+            JSONObject chapter = chapters.optJSONObject(i);
+            int number;
+            if (animeMode) {
+                if (animeSeasonNumber(chapter) != season) continue;
+                number = animeEpisodeNumber(chapter, i);
+            } else {
+                number = chapterStorageIndex(chapter, i);
+            }
+            if (number < start || number > end || chapterState(chapter) == state) continue;
+            putJson(chapter, "state", state);
+            if (chapter != null) chapter.remove("done");
+            changed++;
+        }
+        if (changed > 0 && !saveLibrary()) {
+            restoreLibrary(before);
+            return;
+        }
+        dialog.dismiss();
+        showChapters();
     }
 
     private int parseRangeNumber(String value) {
         try { return Integer.parseInt(englishDigits(value == null ? "" : value.trim())); }
         catch (NumberFormatException ignored) { return -1; }
-    }
-
-    private void updateChapterChecklistSummary() {
-        if (chapterChecklistCount == null) return;
-        JSONObject manhwa = activeManhwa();
-        JSONArray chapters = checklistArray(manhwa);
-        int total = chapters == null ? 0 : chapters.length();
-        int seen = 0;
-        int ready = 0;
-        if (chapters != null) for (int i = 0; i < chapters.length(); i++) {
-            JSONObject chapter = chapters.optJSONObject(i);
-            int state = chapterState(chapter);
-            if (state == 2) seen++;
-            else if (state == 1) ready++;
-        }
-        chapterChecklistCount.setText(formatCount(seen) + " خوانده  ·  " + formatCount(ready)
-                + " آماده  ·  " + formatCount(total));
     }
 
     private View chapterStateLegend() {
@@ -3645,6 +3894,7 @@ public final class MainActivity extends Activity {
         if (!"chapters".equals(page) || appColumn == null) return;
         JSONObject manhwa = activeManhwa();
         if (manhwa == null) return;
+        if (animeMode) { showChapters(); return; }
         if (appColumn.getChildCount() > 0) appColumn.removeViewAt(0);
         addChaptersHeader(manhwa);
         if (chapterAdapter != null) chapterAdapter.notifyDataSetChanged();
@@ -3691,10 +3941,20 @@ public final class MainActivity extends Activity {
     }
 
     private void ensureChapterStorageIndexes(JSONArray chapters) {
+        Set<Integer> used = new HashSet<>();
+        int next = 1;
         for (int i = 0; i < chapters.length(); i++) {
             JSONObject chapter = chapters.optJSONObject(i);
-            if (chapter != null && chapter.optInt("storageIndex", 0) < 1) {
-                putJson(chapter, "storageIndex", i + 1);
+            if (chapter != null) next = Math.max(next, chapter.optInt("storageIndex", i + 1) + 1);
+        }
+        for (int i = 0; i < chapters.length(); i++) {
+            JSONObject chapter = chapters.optJSONObject(i);
+            if (chapter == null) continue;
+            int saved = chapter.optInt("storageIndex", 0);
+            if (saved < 1 || !used.add(saved)) {
+                while (used.contains(next)) next++;
+                putJson(chapter, "storageIndex", next);
+                used.add(next++);
             }
         }
     }
@@ -3723,24 +3983,37 @@ public final class MainActivity extends Activity {
         return saved > 0 ? saved : position + 1;
     }
 
+    private int animeSeasonNumber(JSONObject episode) {
+        return Math.max(1, episode == null ? 1 : episode.optInt("seasonNumber", 1));
+    }
+
+    private int animeEpisodeNumber(JSONObject episode, int position) {
+        int saved = episode == null ? 0 : episode.optInt("episodeNumber", 0);
+        return saved > 0 ? saved : chapterStorageIndex(episode, position);
+    }
+
     private String chapterLabel(JSONObject chapter, int index) {
         String savedTitle = chapter == null ? "" : englishDigits(chapter.optString("title").trim());
         return savedTitle.isEmpty() ? contentUnitLabel() + " " + (index + 1) : savedTitle;
     }
 
     private String chapterCellNumber(JSONObject chapter, int index) {
-        return formatCount(chapterStorageIndex(chapter, index));
+        return formatCount(animeMode ? animeEpisodeNumber(chapter, index) : chapterStorageIndex(chapter, index));
     }
 
     private int lastSeenChapter(JSONObject manhwa) {
+        return Math.max(0, lastProgressedChapterIndex(manhwa));
+    }
+
+    private int lastProgressedChapterIndex(JSONObject manhwa) {
         JSONArray chapters = checklistArray(manhwa);
-        if (chapters == null || chapters.length() == 0) return 0;
+        if (chapters == null || chapters.length() == 0) return -1;
         int lastSeen = -1;
         for (int i = 0; i < chapters.length(); i++) {
             JSONObject chapter = chapters.optJSONObject(i);
             if (chapterState(chapter) > 0) lastSeen = i;
         }
-        return Math.max(0, lastSeen);
+        return lastSeen;
     }
 
     private void openChapters(JSONObject manhwa) {
@@ -3778,7 +4051,24 @@ public final class MainActivity extends Activity {
         boolean hasGenres;
         boolean hasUnitCount;
         boolean hasCoverUrl;
+        boolean hasSeasons;
+        boolean validSeasons = true;
         final ArrayList<String> genres = new ArrayList<>();
+        final ArrayList<AnimeSeasonRange> seasons = new ArrayList<>();
+    }
+
+    private static final class AnimeSeasonRange {
+        final int seasonNumber;
+        final int episodeStart;
+        final int episodeEnd;
+
+        AnimeSeasonRange(int seasonNumber, int episodeStart, int episodeEnd) {
+            this.seasonNumber = seasonNumber;
+            this.episodeStart = episodeStart;
+            this.episodeEnd = episodeEnd;
+        }
+
+        int episodeCount() { return episodeEnd - episodeStart + 1; }
     }
 
     private static final class ManhwaJsonImportTarget {
@@ -3789,6 +4079,8 @@ public final class MainActivity extends Activity {
         final ArrayList<String> availableGenres;
         final View descriptionEntry;
         final View genreEntry;
+        final EditText seasonRanges;
+        final EditText coverUrl;
         final boolean isNew;
         final boolean anime;
         final String originalCoverName;
@@ -3797,7 +4089,8 @@ public final class MainActivity extends Activity {
         ManhwaJsonImportTarget(EditText title, EditText count,
                              String[] description,
                              LinkedHashSet<String> selectedGenres, ArrayList<String> availableGenres,
-                             View descriptionEntry, View genreEntry, boolean isNew, boolean anime,
+                              View descriptionEntry, View genreEntry, EditText seasonRanges, EditText coverUrl,
+                              boolean isNew, boolean anime,
                              String originalCoverName) {
             this.title = title;
             this.count = count;
@@ -3806,6 +4099,8 @@ public final class MainActivity extends Activity {
             this.availableGenres = availableGenres;
             this.descriptionEntry = descriptionEntry;
             this.genreEntry = genreEntry;
+            this.seasonRanges = seasonRanges;
+            this.coverUrl = coverUrl;
             this.isNew = isNew;
             this.anime = anime;
             this.originalCoverName = originalCoverName == null ? "" : originalCoverName;
@@ -3891,6 +4186,35 @@ public final class MainActivity extends Activity {
             catch (NumberFormatException ignored) { result.unitCount = 0; }
         }
 
+        result.hasSeasons = json.has("seasons");
+        JSONArray rawSeasons = json.optJSONArray("seasons");
+        if (result.hasSeasons && rawSeasons == null) result.validSeasons = false;
+        if (rawSeasons != null) {
+            Set<Integer> seasonNumbers = new HashSet<>();
+            for (int i = 0; i < rawSeasons.length(); i++) {
+                JSONObject rawSeason = rawSeasons.optJSONObject(i);
+                if (rawSeason == null) { result.validSeasons = false; continue; }
+                int seasonNumber = rawSeason.optInt("seasonNumber", rawSeason.optInt("season", i + 1));
+                int episodeStart = rawSeason.optInt("episodeStart", rawSeason.optInt("startEpisode", 1));
+                int episodeEnd = rawSeason.optInt("episodeEnd", rawSeason.optInt("endEpisode", 0));
+                if (episodeEnd < episodeStart && rawSeason.has("episodeCount")) {
+                    episodeEnd = episodeStart + Math.max(0, rawSeason.optInt("episodeCount", 0)) - 1;
+                }
+                if (seasonNumber < 1 || seasonNumber > 500 || episodeStart < 1
+                        || episodeEnd < episodeStart || episodeEnd > 5000
+                        || !seasonNumbers.add(seasonNumber)) {
+                    result.validSeasons = false;
+                    continue;
+                }
+                result.seasons.add(new AnimeSeasonRange(seasonNumber, episodeStart, episodeEnd));
+            }
+        }
+        if (totalEpisodes(result.seasons) > 5000) result.validSeasons = false;
+        if (!result.hasUnitCount && result.hasSeasons && result.validSeasons) {
+            result.unitCount = totalEpisodes(result.seasons);
+            result.hasUnitCount = true;
+        }
+
         String genreKey = json.has("genres") ? "genres" : "tags";
         result.hasGenres = json.has(genreKey);
         Object rawGenres = json.opt(genreKey);
@@ -3908,11 +4232,64 @@ public final class MainActivity extends Activity {
         return result;
     }
 
+    private int totalEpisodes(List<AnimeSeasonRange> seasons) {
+        int total = 0;
+        if (seasons != null) for (AnimeSeasonRange season : seasons) total += season.episodeCount();
+        return total;
+    }
+
+    private String formatAnimeSeasonRanges(List<AnimeSeasonRange> seasons) {
+        ArrayList<AnimeSeasonRange> ordered = new ArrayList<>();
+        if (seasons != null) ordered.addAll(seasons);
+        Collections.sort(ordered, (first, second) -> Integer.compare(first.seasonNumber, second.seasonNumber));
+        StringBuilder text = new StringBuilder();
+        for (AnimeSeasonRange season : ordered) {
+            if (text.length() > 0) text.append('\n');
+            text.append('S').append(season.seasonNumber).append(": ")
+                    .append(season.episodeStart).append('-').append(season.episodeEnd);
+        }
+        return text.toString();
+    }
+
+    private ArrayList<AnimeSeasonRange> parseAnimeSeasonRanges(String source, int defaultCount) {
+        ArrayList<AnimeSeasonRange> ranges = new ArrayList<>();
+        String normalized = englishDigits(source == null ? "" : source.trim());
+        if (normalized.isEmpty()) {
+            if (defaultCount < 1 || defaultCount > 5000) throw new IllegalArgumentException("تعداد قسمت‌ها معتبر نیست.");
+            ranges.add(new AnimeSeasonRange(1, 1, defaultCount));
+            return ranges;
+        }
+        Set<Integer> usedSeasons = new HashSet<>();
+        int total = 0;
+        for (String rawLine : normalized.split("\\r?\\n")) {
+            String line = rawLine.trim();
+            if (line.isEmpty()) continue;
+            Matcher matcher = ANIME_SEASON_RANGE_PATTERN.matcher(line);
+            if (!matcher.matches()) throw new IllegalArgumentException("قالب هر فصل باید مانند S1: 1-12 باشد.");
+            int seasonNumber = Integer.parseInt(matcher.group(1));
+            int episodeStart = Integer.parseInt(matcher.group(2));
+            int episodeEnd = Integer.parseInt(matcher.group(3));
+            if (seasonNumber < 1 || seasonNumber > 500 || episodeStart < 1 || episodeEnd < episodeStart
+                    || episodeEnd > 5000 || !usedSeasons.add(seasonNumber)) {
+                throw new IllegalArgumentException("شماره یا بازهٔ فصل‌ها معتبر نیست.");
+            }
+            AnimeSeasonRange range = new AnimeSeasonRange(seasonNumber, episodeStart, episodeEnd);
+            ranges.add(range);
+            total += range.episodeCount();
+            if (total > 5000) throw new IllegalArgumentException("مجموع قسمت‌ها نباید بیشتر از 5000 باشد.");
+        }
+        if (ranges.isEmpty()) throw new IllegalArgumentException("بازهٔ فصل‌ها را وارد کنید.");
+        Collections.sort(ranges, (first, second) -> Integer.compare(first.seasonNumber, second.seasonNumber));
+        return ranges;
+    }
+
     private void showManhwaJsonImportPreview(ManhwaJsonData data, ManhwaJsonImportTarget target) {
         StringBuilder preview = new StringBuilder();
         if (data.hasTitle) appendPreviewLine(preview, contentTitleLabel(), data.title.isEmpty() ? "خالی" : data.title);
         if (data.hasDescription) appendPreviewLine(preview, "توضیحات", shortManhwaPreview(data.description));
         if (data.hasCoverUrl) appendPreviewLine(preview, "نشانی جلد", data.coverUrl.isEmpty() ? "خالی" : shortManhwaPreview(data.coverUrl));
+        if (target.anime && data.hasSeasons) appendPreviewLine(preview, "فصل‌ها", data.validSeasons
+                ? shortManhwaPreview(formatAnimeSeasonRanges(data.seasons)) : "ساختار نامعتبر");
         if (data.hasGenres) appendPreviewLine(preview, "ژانرها", data.genres.isEmpty()
                 ? "خالی" : android.text.TextUtils.join("، ", data.genres));
         if (data.hasUnitCount) appendPreviewLine(preview, "تعداد " + contentUnitPlural(), target.isNew
@@ -3946,6 +4323,10 @@ public final class MainActivity extends Activity {
             toast("فرم بسته شده است.");
             return;
         }
+        if (target.anime && data.hasSeasons && !data.validSeasons) {
+            toast("ساختار فصل‌ها در JSON معتبر نیست.");
+            return;
+        }
         if (data.hasTitle) target.title.setText(englishDigits(data.title));
         if (data.hasDescription) {
             target.description[0] = data.description;
@@ -3954,6 +4335,12 @@ public final class MainActivity extends Activity {
         if (target.isNew && data.hasUnitCount && data.unitCount > 0 && data.unitCount <= 5000) {
             target.count.setText(Integer.toString(data.unitCount));
         }
+        if (target.anime && target.seasonRanges != null && data.hasSeasons) {
+            target.seasonRanges.setText(formatAnimeSeasonRanges(data.seasons));
+            int total = totalEpisodes(data.seasons);
+            if (total > 0 && total <= 5000) target.count.setText(Integer.toString(total));
+        }
+        if (data.hasCoverUrl && target.coverUrl != null) target.coverUrl.setText(data.coverUrl);
         if (data.hasGenres) {
             target.selectedGenres.clear();
             for (String raw : data.genres) {
@@ -4061,9 +4448,9 @@ public final class MainActivity extends Activity {
     }
 
     private void showManhwaJsonPrompt(EditText titleField) {
-        String assetName = animeMode ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
-        try (InputStream input = getAssets().open(assetName)) {
-            String prompt = readUtf8(input)
+        boolean anime = animeMode;
+        try {
+            String prompt = loadJsonPrompt(anime)
                     .replace("__TITLE_JSON__", JSONObject.quote(titleField.getText().toString().trim()));
             TextView content = text(prompt, 14, TEXT);
             content.setTextIsSelectable(true);
@@ -4088,6 +4475,64 @@ public final class MainActivity extends Activity {
         } catch (IOException error) {
             toast("خواندن متن راهنما ناموفق بود.");
         }
+    }
+
+    private String loadJsonPrompt(boolean anime) throws IOException {
+        String key = anime ? "anime" : "manhwa";
+        SharedPreferences preferences = getSharedPreferences("ai_prompts", MODE_PRIVATE);
+        String saved = preferences.getString(key, null);
+        if (saved != null) return saved;
+        String assetName = anime ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
+        try (InputStream input = getAssets().open(assetName)) {
+            return readUtf8(input);
+        }
+    }
+
+    private void showJsonPromptEditor(boolean anime) {
+        String key = anime ? "anime" : "manhwa";
+        String title = anime ? "پرامپت انیمه" : "پرامپت مانهوا";
+        String defaultPrompt;
+        try {
+            String assetName = anime ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
+            try (InputStream input = getAssets().open(assetName)) {
+                defaultPrompt = readUtf8(input);
+            }
+        } catch (IOException error) {
+            toast("خواندن پرامپت پیش‌فرض ناموفق بود.");
+            return;
+        }
+        EditText editor = edit("متن پرامپت", true);
+        editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        editor.setGravity(Gravity.TOP | Gravity.RIGHT);
+        editor.setMinLines(12);
+        editor.setText(getSharedPreferences("ai_prompts", MODE_PRIVATE).getString(key, defaultPrompt));
+        ScrollView promptScroll = new ScrollView(this);
+        promptScroll.setVerticalScrollBarEnabled(false);
+        promptScroll.addView(editor);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("ویرایش " + title)
+                .setView(dialogPadding(promptScroll))
+                .setNegativeButton("لغو", null)
+                .setNeutralButton("پیش‌فرض", null)
+                .setPositiveButton("ذخیره", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                getSharedPreferences("ai_prompts", MODE_PRIVATE).edit()
+                        .putString(key, editor.getText().toString()).apply();
+                dialog.dismiss();
+                toast("پرامپت ذخیره شد.");
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                getSharedPreferences("ai_prompts", MODE_PRIVATE).edit().remove(key).apply();
+                dialog.dismiss();
+                toast("پرامپت پیش‌فرض بازیابی شد.");
+            });
+        });
+        dialog.show();
+        styleDialogWindow(dialog);
+        dialog.getWindow().setSoftInputMode(WindowManagerFlags.ADJUST_RESIZE);
     }
 
     private void shareManhwaPrompt(String prompt) {
@@ -4309,14 +4754,6 @@ public final class MainActivity extends Activity {
         coverRowParams.bottomMargin = dp(9);
         renderCoverPreview(manhwaCoverPreview, pendingCoverName);
 
-        LinearLayout importRow = new LinearLayout(this);
-        importRow.setOrientation(LinearLayout.HORIZONTAL);
-        importRow.setGravity(Gravity.CENTER_VERTICAL);
-        View importJsonButton = textButton("ورود JSON", "scan_text", themeSecondaryColor(), this::chooseManhwaJson);
-        LinearLayout.LayoutParams importButtonParams = new LinearLayout.LayoutParams(0, dp(52), 1);
-        importButtonParams.bottomMargin = dp(9);
-        importRow.addView(importJsonButton, importButtonParams);
-
         EditText title = edit("نام " + itemLabel, false);
         title.setText(isNew ? "" : englishDigits(existing.optString("title")));
         final String[] descriptionValue = {isNew ? "" : existing.optString("description", "")};
@@ -4336,14 +4773,45 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(-1, dp(50));
         promptParams.bottomMargin = dp(8);
         form.addView(promptButton, promptParams);
+        View importJsonButton = textButton("ورود اطلاعات از JSON", "scan_text", themeSecondaryColor(), this::chooseManhwaJson);
+        LinearLayout.LayoutParams importJsonParams = new LinearLayout.LayoutParams(-1, dp(50));
+        importJsonParams.bottomMargin = dp(8);
+        form.addView(importJsonButton, importJsonParams);
 
         LinearLayout detailsPanel = new LinearLayout(this);
         detailsPanel.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams descriptionEntryParams = new LinearLayout.LayoutParams(-1, dp(58));
         descriptionEntryParams.bottomMargin = dp(9);
         detailsPanel.addView(coverRow, coverRowParams);
-        detailsPanel.addView(importRow, new LinearLayout.LayoutParams(-1, dp(52)));
+        EditText coverUrl = edit("لینک مستقیم دانلود جلد", false);
+        coverUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        detailsPanel.addView(clearableInput(coverUrl), fieldParams());
+        View downloadCoverButton = textButton("دریافت جلد از لینک", "download", themeSecondaryColor(), () -> {
+            ManhwaJsonImportTarget target = activeManhwaJsonImportTarget;
+            String address = coverUrl.getText().toString().trim();
+            if (address.isEmpty()) { coverUrl.setError("لینک مستقیم تصویر را وارد کنید"); return; }
+            if (target == null) { toast("فرم فعال پیدا نشد."); return; }
+            if (target.coverDownloadInProgress) { toast("دریافت جلد در حال انجام است."); return; }
+            downloadCoverFromUrl(address, target);
+        });
+        LinearLayout.LayoutParams downloadCoverParams = new LinearLayout.LayoutParams(-1, dp(48));
+        downloadCoverParams.bottomMargin = dp(9);
+        detailsPanel.addView(downloadCoverButton, downloadCoverParams);
         detailsPanel.addView(descriptionEntry[0], descriptionEntryParams);
+        EditText seasonRanges = isNew && anime ? edit("S1: 1-12\nS2: 13-25", true) : null;
+        if (seasonRanges != null) {
+            TextView seasonHint = text("هر فصل در یک خط؛ شمارهٔ قسمت می‌تواند بین فصل‌ها ادامه پیدا کند یا دوباره از 1 شروع شود.", 12, MUTED);
+            seasonHint.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams seasonHintParams = new LinearLayout.LayoutParams(-1, -2);
+            seasonHintParams.topMargin = dp(4);
+            seasonHintParams.bottomMargin = dp(4);
+            detailsPanel.addView(seasonHint, seasonHintParams);
+            seasonRanges.setMinLines(2);
+            seasonRanges.setMaxLines(6);
+            seasonRanges.setGravity(Gravity.TOP | Gravity.RIGHT);
+            detailsPanel.addView(seasonRanges, fieldParams());
+        }
         if (isNew) detailsPanel.addView(clearableInput(count), fieldParams());
 
         final LinkedHashSet<String> selected = new LinkedHashSet<>();
@@ -4385,8 +4853,8 @@ public final class MainActivity extends Activity {
         form.addView(detailsPanel, new LinearLayout.LayoutParams(-1, -2));
 
         activeManhwaJsonImportTarget = new ManhwaJsonImportTarget(title, count,
-                descriptionValue, selected, availableGenres, descriptionEntry[0], genreEntry[0], isNew, anime,
-                originalCoverName);
+                descriptionValue, selected, availableGenres, descriptionEntry[0], genreEntry[0],
+                seasonRanges, coverUrl, isNew, anime, originalCoverName);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -4417,11 +4885,25 @@ public final class MainActivity extends Activity {
                 return;
             }
             int unitTotal = 0;
+            ArrayList<AnimeSeasonRange> animeSeasons = null;
             if (isNew) {
                 String value = englishDigits(count.getText().toString().trim());
-                if (value.isEmpty()) { count.setError("تعداد " + unitLabel + " را وارد کن"); return; }
-                try { unitTotal = Integer.parseInt(value); }
-                catch (NumberFormatException error) { count.setError("تعداد " + unitLabel + " معتبر نیست"); return; }
+                String ranges = seasonRanges == null ? "" : seasonRanges.getText().toString().trim();
+                if (anime && !ranges.isEmpty()) {
+                    try {
+                        animeSeasons = parseAnimeSeasonRanges(ranges, 0);
+                        unitTotal = totalEpisodes(animeSeasons);
+                        count.setText(Integer.toString(unitTotal));
+                    } catch (IllegalArgumentException error) {
+                        seasonRanges.setError(error.getMessage());
+                        return;
+                    }
+                } else {
+                    if (value.isEmpty()) { count.setError("تعداد " + unitLabel + " را وارد کن"); return; }
+                    try { unitTotal = Integer.parseInt(value); }
+                    catch (NumberFormatException error) { count.setError("تعداد " + unitLabel + " معتبر نیست"); return; }
+                    if (anime) animeSeasons = parseAnimeSeasonRanges("", unitTotal);
+                }
                 if (unitTotal < 1 || unitTotal > 5000) {
                     count.setError("تعداد باید بین 1 تا 5000 باشد"); return;
                 }
@@ -4442,12 +4924,28 @@ public final class MainActivity extends Activity {
                 JSONArray chapters = new JSONArray();
                 String checklistKey = anime ? "episodes" : "chapters";
                 String countKey = anime ? "episodeCount" : "chapterCount";
-                for (int i = 0; i < unitTotal; i++) {
-                    JSONObject chapter = newChapter();
-                    putJson(chapter, "title", unitLabel + " " + (i + 1));
-                    putJson(chapter, "storageIndex", i + 1);
-                    putJson(chapter, "orderIndex", i);
-                    chapters.put(chapter);
+                if (anime) {
+                    int index = 0;
+                    for (AnimeSeasonRange season : animeSeasons) {
+                        for (int episodeNumber = season.episodeStart; episodeNumber <= season.episodeEnd; episodeNumber++) {
+                            JSONObject episode = newChapter();
+                            putJson(episode, "title", "قسمت " + episodeNumber);
+                            putJson(episode, "seasonNumber", season.seasonNumber);
+                            putJson(episode, "episodeNumber", episodeNumber);
+                            putJson(episode, "storageIndex", index + 1);
+                            putJson(episode, "orderIndex", index);
+                            chapters.put(episode);
+                            index++;
+                        }
+                    }
+                } else {
+                    for (int i = 0; i < unitTotal; i++) {
+                        JSONObject chapter = newChapter();
+                        putJson(chapter, "title", unitLabel + " " + (i + 1));
+                        putJson(chapter, "storageIndex", i + 1);
+                        putJson(chapter, "orderIndex", i);
+                        chapters.put(chapter);
+                    }
                 }
                 JSONObject manhwa = new JSONObject();
                 try {
@@ -5228,42 +5726,48 @@ public final class MainActivity extends Activity {
         @Override public Object getItem(int position) { return chapters().optJSONObject(position); }
         @Override public long getItemId(int position) { return position; }
         @Override public View getView(int position, View convert, ViewGroup parent) {
-            JSONObject chapter = chapters().optJSONObject(position); if (chapter == null) chapter = newChapter();
-            final JSONObject chapterItem = chapter;
-            String key = chapterSelectionKey(chapterItem, position);
-            boolean selecting = !selectedChapterKeys.isEmpty();
-            boolean selected = selectedChapterKeys.contains(key);
-            int state = chapterState(chapterItem);
-            boolean progressed = state > 0;
-            String number = chapterCellNumber(chapterItem, position);
-            TextView chip = text(number, 13,
-                    progressed && !selected ? contrastOnAccent() : TEXT);
-            chip.setGravity(Gravity.CENTER);
-            chip.setSingleLine(true);
-            chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            chip.setPadding(dp(4), 0, dp(4), 0);
-            chip.setTag(key);
-            int stateColor = state == 2 ? PURPLE : state == 1 ? themeSecondaryColor() : SURFACE;
-            int fillColor = selected ? (lightTheme ? 0xFFEDE3FA : 0xFF241B2C) : stateColor;
-            int strokeColor = selected ? PURPLE : state > 0 ? stateColor : themedStrokeColor(0xFF29242F);
-            chip.setBackground(roundDrawable(fillColor, strokeColor, 8));
-            int numberColor = state == 0 || selected ? TEXT : contrastOnColor(stateColor);
-            chip.setTextColor(numberColor);
-            String stateLabel = state == 2 ? "خوانده‌شده" : state == 1 ? "آمادهٔ خواندن" : "خوانده‌نشده";
-            chip.setContentDescription(contentUnitLabel() + " " + number + "، " + stateLabel);
-            chip.setLayoutParams(new AbsListView.LayoutParams(-1, dp(46)));
-            chip.setOnClickListener(v -> {
-                if (!selectedChapterKeys.isEmpty()) toggleChapterSelection(chapterItem, position);
-                else toggleChapterDone(position);
-            });
-            chip.setOnLongClickListener(v -> {
-                if (selectedChapterKeys.contains(key)) return startReorderDrag(chip, "chapter", key);
-                toggleChapterSelection(chapterItem, position);
-                return true;
-            });
-            setReorderDropTarget(chip, "chapter", key);
-            return chip;
+            JSONObject chapter = chapters().optJSONObject(position);
+            View cell = createChapterCell(chapter, position);
+            cell.setLayoutParams(new AbsListView.LayoutParams(-1, dp(46)));
+            return cell;
         }
+    }
+
+    private View createChapterCell(JSONObject chapter, int position) {
+        if (chapter == null) chapter = newChapter();
+        final JSONObject chapterItem = chapter;
+        String key = chapterSelectionKey(chapterItem, position);
+        boolean selected = selectedChapterKeys.contains(key);
+        int state = chapterState(chapterItem);
+        String number = chapterCellNumber(chapterItem, position);
+        TextView chip = text(number, 13, TEXT);
+        chip.setGravity(Gravity.CENTER);
+        chip.setSingleLine(true);
+        chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        chip.setPadding(dp(4), 0, dp(4), 0);
+        chip.setTag(key);
+        int stateColor = state == 2 ? PURPLE : state == 1 ? themeSecondaryColor() : SURFACE;
+        int fillColor = selected ? (lightTheme ? 0xFFEDE3FA : 0xFF241B2C) : stateColor;
+        int strokeColor = selected ? PURPLE : state > 0 ? stateColor : themedStrokeColor(0xFF29242F);
+        chip.setBackground(roundDrawable(fillColor, strokeColor, 8));
+        int numberColor = state == 0 || selected ? TEXT : contrastOnColor(stateColor);
+        chip.setTextColor(numberColor);
+        String stateLabel = state == 2 ? "خوانده‌شده" : state == 1 ? "آمادهٔ خواندن" : "خوانده‌نشده";
+        String itemDescription = animeMode
+                ? "فصل S" + formatCount(animeSeasonNumber(chapterItem)) + "، قسمت " + number
+                : contentUnitLabel() + " " + number;
+        chip.setContentDescription(itemDescription + "، " + stateLabel);
+        chip.setOnClickListener(v -> {
+            if (!selectedChapterKeys.isEmpty()) toggleChapterSelection(chapterItem, position);
+            else toggleChapterDone(position);
+        });
+        chip.setOnLongClickListener(v -> {
+            if (!animeMode && selectedChapterKeys.contains(key)) return startReorderDrag(chip, "chapter", key);
+            toggleChapterSelection(chapterItem, position);
+            return true;
+        });
+        if (!animeMode) setReorderDropTarget(chip, "chapter", key);
+        return chip;
     }
 
     private void toggleChapterDone(int index) {
@@ -5273,8 +5777,8 @@ public final class MainActivity extends Activity {
         putJson(chapter, "state", (chapterState(chapter) + 1) % 3);
         if (chapter != null) chapter.remove("done");
         saveLibrary();
-        chapterAdapter.notifyDataSetChanged();
-        updateChapterChecklistSummary();
+        if (animeMode) showChapters();
+        else if (chapterAdapter != null) chapterAdapter.notifyDataSetChanged();
     }
 
     private final class GenreCloud extends ViewGroup {

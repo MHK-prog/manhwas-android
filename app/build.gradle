@@ -14,8 +14,8 @@ android {
         applicationId 'com.mhkprog.manhwareader'
         minSdk 23
         targetSdk 36
-        versionCode 165
-        versionName '1.4.31'
+        versionCode 166
+        versionName '1.4.32'
     }
 
     compileOptions {
