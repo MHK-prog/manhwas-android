@@ -1455,6 +1455,15 @@ public final class MainActivity extends Activity {
         body.addView(textButton("بازیابی از نسخهٔ پشتیبان JSON", "folder", themeSecondaryColor(),
                 this::chooseLibraryBackupSource), fieldParams());
 
+        addPreferenceSwitch(body, "هنگام افزودن، به ابزار هوش مصنوعی دسترسی ندارم",
+                "app_settings", "ai_access_unavailable", false);
+        TextView promptsTitle = text("پرامپت‌های تولید اطلاعات", 15, MUTED);
+        promptsTitle.setPadding(0, dp(16), 0, dp(7));
+        body.addView(promptsTitle);
+        body.addView(textButton("ویرایش پرامپت مانهوا", "edit", themeSecondaryColor(),
+                () -> showJsonPromptEditor(false)), fieldParams());
+        body.addView(textButton("ویرایش پرامپت انیمه", "edit", themeSecondaryColor(),
+                () -> showJsonPromptEditor(true)), fieldParams());
         scroll.addView(body);
         appColumn.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
     }
@@ -4389,6 +4398,22 @@ public final class MainActivity extends Activity {
         void save(LinkedHashSet<String> selected, ArrayList<String> available);
     }
 
+    private static final class ManhwaJsonData {
+        String title = "";
+        String description = "";
+        String coverUrl = "";
+        int unitCount;
+        boolean hasTitle;
+        boolean hasDescription;
+        boolean hasGenres;
+        boolean hasUnitCount;
+        boolean hasCoverUrl;
+        boolean hasSeasons;
+        boolean validSeasons = true;
+        final ArrayList<String> genres = new ArrayList<>();
+        final ArrayList<AnimeSeasonRange> seasons = new ArrayList<>();
+    }
+
     private static final class AnimeSeasonRange {
         final int seasonNumber;
         final int episodeStart;
@@ -4405,11 +4430,34 @@ public final class MainActivity extends Activity {
 
     private static final class CoverDownloadTarget {
         final EditText title;
+        final EditText count;
+        final String[] description;
+        final LinkedHashSet<String> selectedGenres;
+        final ArrayList<String> availableGenres;
+        final View descriptionEntry;
+        final View genreEntry;
+        final EditText seasonRanges;
+        final EditText coverUrl;
+        final boolean isNew;
+        final boolean anime;
         final String originalCoverName;
         boolean coverDownloadInProgress;
 
-        CoverDownloadTarget(EditText title, String originalCoverName) {
+        CoverDownloadTarget(EditText title, EditText count, String[] description,
+                            LinkedHashSet<String> selectedGenres, ArrayList<String> availableGenres,
+                            View descriptionEntry, View genreEntry, EditText seasonRanges, EditText coverUrl,
+                            boolean isNew, boolean anime, String originalCoverName) {
             this.title = title;
+            this.count = count;
+            this.description = description;
+            this.selectedGenres = selectedGenres;
+            this.availableGenres = availableGenres;
+            this.descriptionEntry = descriptionEntry;
+            this.genreEntry = genreEntry;
+            this.seasonRanges = seasonRanges;
+            this.coverUrl = coverUrl;
+            this.isNew = isNew;
+            this.anime = anime;
             this.originalCoverName = originalCoverName == null ? "" : originalCoverName;
         }
     }
@@ -4547,6 +4595,307 @@ public final class MainActivity extends Activity {
                 toast("جلد در پوشهٔ اختصاصی ذخیره شد.");
             });
         });
+    }
+
+    private void chooseManhwaJson() {
+        CoverDownloadTarget target = activeCoverDownloadTarget;
+        if (target == null) {
+            toast("فرم فعال پیدا نشد.");
+            return;
+        }
+        EditText source = edit("متن JSON را اینجا بچسبانید", true);
+        source.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        source.setMinLines(8);
+        source.setMaxLines(14);
+        source.setGravity(Gravity.TOP | Gravity.RIGHT);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(source);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("ورود متن JSON")
+                .setView(dialogPadding(scroll))
+                .setNegativeButton("لغو", null)
+                .setPositiveButton("بررسی", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            if (activeCoverDownloadTarget != target) {
+                toast("فرم بسته شده است.");
+                dialog.dismiss();
+                return;
+            }
+            try {
+                ManhwaJsonData imported = parseManhwaJsonText(source.getText().toString(), target.anime);
+                dialog.dismiss();
+                showManhwaJsonImportPreview(imported, target);
+            } catch (JSONException error) {
+                source.setError("ساختار JSON را بررسی کنید");
+            }
+        }));
+        dialog.show();
+        styleDialogWindow(dialog);
+        dialog.getWindow().setSoftInputMode(WindowManagerFlags.ADJUST_RESIZE);
+    }
+
+    private ManhwaJsonData parseManhwaJsonText(String source, boolean anime) throws JSONException {
+        String normalized = source == null ? "" : source.trim();
+        if (normalized.startsWith("```") && normalized.endsWith("```")) {
+            int firstLine = normalized.indexOf('\n');
+            if (firstLine >= 0) normalized = normalized.substring(firstLine + 1, normalized.length() - 3).trim();
+        }
+        JSONObject root = new JSONObject(normalized);
+        JSONObject nested = root.optJSONObject(anime ? "anime" : "manhwa");
+        if (nested == null) nested = root.optJSONObject(anime ? "manhwa" : "anime");
+        return parseManhwaJson(nested == null ? root : nested, anime);
+    }
+
+    private String readUtf8(InputStream input) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        int read;
+        while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+        return new String(output.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    private ManhwaJsonData parseManhwaJson(JSONObject json, boolean anime) {
+        ManhwaJsonData result = new ManhwaJsonData();
+        result.hasTitle = json.has("title") || json.has("name");
+        result.title = json.optString("title", json.optString("name", "")).trim();
+        result.hasDescription = json.has("description");
+        result.description = json.optString("description", "").trim();
+        result.hasCoverUrl = json.has("coverUrl") || json.has("cover_url");
+        result.coverUrl = json.optString("coverUrl", json.optString("cover_url", "")).trim();
+        String countKey = anime ? "episodeCount" : "chapterCount";
+        Object rawCount = json.has(countKey) ? json.opt(countKey)
+                : json.has(anime ? "episodesCount" : "chaptersCount")
+                ? json.opt(anime ? "episodesCount" : "chaptersCount") : json.opt("count");
+        result.hasUnitCount = json.has(countKey) || json.has(anime ? "episodesCount" : "chaptersCount") || json.has("count");
+        if (rawCount instanceof Number) result.unitCount = ((Number) rawCount).intValue();
+        else if (rawCount instanceof String) {
+            try { result.unitCount = Integer.parseInt(englishDigits(((String) rawCount).trim())); }
+            catch (NumberFormatException ignored) { result.unitCount = 0; }
+        }
+
+        result.hasSeasons = json.has("seasons");
+        JSONArray rawSeasons = json.optJSONArray("seasons");
+        if (result.hasSeasons && rawSeasons == null) result.validSeasons = false;
+        if (rawSeasons != null) {
+            Set<Integer> seasonNumbers = new HashSet<>();
+            for (int i = 0; i < rawSeasons.length(); i++) {
+                JSONObject rawSeason = rawSeasons.optJSONObject(i);
+                if (rawSeason == null) { result.validSeasons = false; continue; }
+                int seasonNumber = rawSeason.optInt("seasonNumber", rawSeason.optInt("season", i + 1));
+                int episodeStart = rawSeason.optInt("episodeStart", rawSeason.optInt("startEpisode", 1));
+                int episodeEnd = rawSeason.optInt("episodeEnd", rawSeason.optInt("endEpisode", 0));
+                if (episodeEnd < episodeStart && rawSeason.has("episodeCount")) {
+                    episodeEnd = episodeStart + Math.max(0, rawSeason.optInt("episodeCount", 0)) - 1;
+                }
+                if (seasonNumber < 1 || seasonNumber > 500 || episodeStart < 1
+                        || episodeEnd < episodeStart || episodeEnd > 5000
+                        || !seasonNumbers.add(seasonNumber)) {
+                    result.validSeasons = false;
+                    continue;
+                }
+                result.seasons.add(new AnimeSeasonRange(seasonNumber, episodeStart, episodeEnd));
+            }
+        }
+        if (totalEpisodes(result.seasons) > 5000) result.validSeasons = false;
+        if (!result.hasUnitCount && result.hasSeasons && result.validSeasons) {
+            result.unitCount = totalEpisodes(result.seasons);
+            result.hasUnitCount = true;
+        }
+
+        String genreKey = json.has("genres") ? "genres" : "tags";
+        result.hasGenres = json.has(genreKey);
+        Object rawGenres = json.opt(genreKey);
+        if (rawGenres instanceof JSONArray) {
+            JSONArray genres = (JSONArray) rawGenres;
+            for (int i = 0; i < genres.length(); i++) {
+                String value = genres.optString(i, "").trim();
+                if (!value.isEmpty()) result.genres.add(value);
+            }
+        } else if (rawGenres instanceof String) {
+            for (String value : ((String) rawGenres).split("[,،]")) {
+                if (!value.trim().isEmpty()) result.genres.add(value.trim());
+            }
+        }
+        return result;
+    }
+
+    private void showManhwaJsonImportPreview(ManhwaJsonData data, CoverDownloadTarget target) {
+        StringBuilder preview = new StringBuilder();
+        if (data.hasTitle) appendPreviewLine(preview, contentTitleLabel(), data.title.isEmpty() ? "خالی" : data.title);
+        if (data.hasDescription) appendPreviewLine(preview, "توضیحات", shortManhwaPreview(data.description));
+        if (data.hasCoverUrl) appendPreviewLine(preview, "نشانی جلد", data.coverUrl.isEmpty() ? "خالی" : shortManhwaPreview(data.coverUrl));
+        if (target.anime && data.hasSeasons) appendPreviewLine(preview, "فصل‌ها", data.validSeasons
+                ? shortManhwaPreview(formatAnimeSeasonRanges(data.seasons)) : "ساختار نامعتبر");
+        if (data.hasGenres) appendPreviewLine(preview, "ژانرها", data.genres.isEmpty()
+                ? "خالی" : android.text.TextUtils.join("، ", data.genres));
+        if (data.hasUnitCount) appendPreviewLine(preview, "تعداد " + contentUnitPlural(), target.isNew
+                ? (data.unitCount > 0 ? Integer.toString(data.unitCount) : "نامعتبر؛ بدون تغییر")
+                : "در ویرایش اعمال نمی‌شود");
+        if (preview.length() == 0) preview.append("فیلد قابل استفاده‌ای در فایل پیدا نشد.");
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("بازبینی اطلاعات JSON")
+                .setMessage(preview.toString())
+                .setNegativeButton("لغو", null)
+                .setPositiveButton("اعمال به فرم", (ignored, which) -> applyManhwaJson(data, target))
+                .create();
+        dialog.show();
+        styleDialogWindow(dialog);
+    }
+
+    private void appendPreviewLine(StringBuilder text, String label, String value) {
+        if (text.length() > 0) text.append('\n');
+        text.append(englishDigits(label)).append(": ").append(englishDigits(value));
+    }
+
+    private String shortManhwaPreview(String value) {
+        String preview = value == null ? "" : value.replace('\n', ' ').trim();
+        if (preview.isEmpty()) return "خالی";
+        return preview.length() <= 150 ? preview : preview.substring(0, 147) + "…";
+    }
+
+    private void applyManhwaJson(ManhwaJsonData data, CoverDownloadTarget target) {
+        if (activeCoverDownloadTarget != target) {
+            toast("فرم بسته شده است.");
+            return;
+        }
+        if (target.anime && data.hasSeasons && !data.validSeasons) {
+            toast("ساختار فصل‌ها در JSON معتبر نیست.");
+            return;
+        }
+        if (data.hasTitle) target.title.setText(englishDigits(data.title));
+        if (data.hasDescription) {
+            target.description[0] = data.description;
+            updateManhwaDialogEntryButton(target.descriptionEntry, descriptionButtonSummary(data.description));
+        }
+        if (target.isNew && data.hasUnitCount && data.unitCount > 0 && data.unitCount <= 5000) {
+            target.count.setText(Integer.toString(data.unitCount));
+        }
+        if (target.anime && target.seasonRanges != null && data.hasSeasons) {
+            target.seasonRanges.setText(formatAnimeSeasonRanges(data.seasons));
+            int total = totalEpisodes(data.seasons);
+            if (total > 0 && total <= 5000) target.count.setText(Integer.toString(total));
+        }
+        if (data.hasCoverUrl && target.coverUrl != null) target.coverUrl.setText(data.coverUrl);
+        if (data.hasGenres) {
+            target.selectedGenres.clear();
+            for (String raw : data.genres) {
+                String genre = canonicalGenre(titleCaseWords(raw));
+                if (genre.isEmpty()) continue;
+                String matching = null;
+                for (String available : target.availableGenres) {
+                    if (available.equalsIgnoreCase(genre)) { matching = available; break; }
+                }
+                if (matching == null) {
+                    target.availableGenres.add(genre);
+                    matching = genre;
+                }
+                target.selectedGenres.add(matching);
+            }
+            updateManhwaDialogEntryButton(target.genreEntry, genreButtonSummary(target.selectedGenres));
+        }
+        toast("اطلاعات به فرم اضافه شد؛ برای ذخیره، ثبت اطلاعات را بزن.");
+        if (data.hasCoverUrl && !data.coverUrl.isEmpty()) downloadCoverFromUrl(data.coverUrl, target);
+    }
+
+    private void showManhwaJsonPrompt(EditText titleField) {
+        boolean anime = animeMode;
+        try {
+            String prompt = loadJsonPrompt(anime)
+                    .replace("__TITLE_JSON__", JSONObject.quote(titleField.getText().toString().trim()));
+            TextView content = text(prompt, 14, TEXT);
+            content.setTextIsSelectable(true);
+            content.setGravity(Gravity.RIGHT | Gravity.TOP);
+            content.setPadding(dp(14), dp(12), dp(14), dp(12));
+            setRtlTextAlignment(content);
+            ScrollView scroll = new ScrollView(this);
+            scroll.setVerticalScrollBarEnabled(false);
+            scroll.addView(content);
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                    .setTitle("پرامپت دریافت اطلاعات")
+                    .setView(dialogPadding(scroll))
+                    .setNegativeButton("بستن", null)
+                    .setNeutralButton("اشتراک‌گذاری", (ignored, which) -> shareManhwaPrompt(prompt))
+                    .setPositiveButton("کپی متن", (ignored, which) -> {
+                        copyToClipboard("manhwa-json-prompt", prompt);
+                        toast("پرامپت کپی شد.");
+                    })
+                    .create();
+            dialog.show();
+            styleDialogWindow(dialog);
+        } catch (IOException error) {
+            toast("خواندن متن راهنما ناموفق بود.");
+        }
+    }
+
+    private String loadJsonPrompt(boolean anime) throws IOException {
+        String key = anime ? "anime" : "manhwa";
+        SharedPreferences preferences = getSharedPreferences("ai_prompts", MODE_PRIVATE);
+        String saved = preferences.getString(key, null);
+        if (saved != null) return saved;
+        String assetName = anime ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
+        try (InputStream input = getAssets().open(assetName)) {
+            return readUtf8(input);
+        }
+    }
+
+    private void showJsonPromptEditor(boolean anime) {
+        String key = anime ? "anime" : "manhwa";
+        String title = anime ? "پرامپت انیمه" : "پرامپت مانهوا";
+        String defaultPrompt;
+        try {
+            String assetName = anime ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
+            try (InputStream input = getAssets().open(assetName)) {
+                defaultPrompt = readUtf8(input);
+            }
+        } catch (IOException error) {
+            toast("خواندن پرامپت پیش‌فرض ناموفق بود.");
+            return;
+        }
+        EditText editor = edit("متن پرامپت", true);
+        editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        editor.setGravity(Gravity.TOP | Gravity.RIGHT);
+        editor.setMinLines(12);
+        editor.setText(getSharedPreferences("ai_prompts", MODE_PRIVATE).getString(key, defaultPrompt));
+        ScrollView promptScroll = new ScrollView(this);
+        promptScroll.setVerticalScrollBarEnabled(false);
+        promptScroll.addView(editor);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("ویرایش " + title)
+                .setView(dialogPadding(promptScroll))
+                .setNegativeButton("لغو", null)
+                .setNeutralButton("پیش‌فرض", null)
+                .setPositiveButton("ذخیره", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                getSharedPreferences("ai_prompts", MODE_PRIVATE).edit()
+                        .putString(key, editor.getText().toString()).apply();
+                dialog.dismiss();
+                toast("پرامپت ذخیره شد.");
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                getSharedPreferences("ai_prompts", MODE_PRIVATE).edit().remove(key).apply();
+                dialog.dismiss();
+                toast("پرامپت پیش‌فرض بازیابی شد.");
+            });
+        });
+        dialog.show();
+        styleDialogWindow(dialog);
+        dialog.getWindow().setSoftInputMode(WindowManagerFlags.ADJUST_RESIZE);
+    }
+
+    private void shareManhwaPrompt(String prompt) {
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "پرامپت اطلاعات " + contentTitleLabel());
+        share.putExtra(Intent.EXTRA_TEXT, prompt);
+        try { startActivity(Intent.createChooser(share, "اشتراک‌گذاری نمونه")); }
+        catch (Exception error) { toast("اشتراک‌گذاری در دسترس نیست."); }
     }
 
     private View manhwaDialogEntryButton(String title, String summary, String icon, Runnable action) {
@@ -4773,6 +5122,18 @@ public final class MainActivity extends Activity {
         EditText count = edit("تعداد " + (anime ? "قسمت" : "فصل"), false);
         count.setInputType(InputType.TYPE_CLASS_NUMBER);
         form.addView(clearableInput(title), fieldParams());
+        if (isNew) {
+            View promptButton = textButton("ساخت پرامپت", "help", themeSecondaryColor(),
+                    () -> showManhwaJsonPrompt(title));
+            LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(-1, dp(50));
+            promptParams.bottomMargin = dp(8);
+            form.addView(promptButton, promptParams);
+            View importJsonButton = textButton("ورود نتیجهٔ پرامپت", "scan_text", themeSecondaryColor(),
+                    this::chooseManhwaJson);
+            LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(-1, dp(50));
+            importParams.bottomMargin = dp(8);
+            form.addView(importJsonButton, importParams);
+        }
 
         LinearLayout detailsPanel = new LinearLayout(this);
         detailsPanel.setOrientation(LinearLayout.VERTICAL);
@@ -4833,7 +5194,7 @@ public final class MainActivity extends Activity {
             TextView detailsToggle = text("نمایش جزئیات", 14, PURPLE);
             detailsToggle.setGravity(Gravity.CENTER);
             detailsToggle.setBackground(roundDrawable(SURFACE, 0xFF40384A, 12));
-            boolean showFullForm = false;
+            boolean showFullForm = getSharedPreferences("app_settings", MODE_PRIVATE).getBoolean("ai_access_unavailable", false);
             detailsPanel.setVisibility(showFullForm ? View.VISIBLE : View.GONE);
             detailsToggle.setText(showFullForm ? "پنهان کردن جزئیات" : "نمایش جزئیات");
             detailsToggle.setOnClickListener(v -> {
@@ -4847,7 +5208,9 @@ public final class MainActivity extends Activity {
         }
         form.addView(detailsPanel, new LinearLayout.LayoutParams(-1, -2));
 
-        activeCoverDownloadTarget = new CoverDownloadTarget(title, originalCoverName);
+        activeCoverDownloadTarget = new CoverDownloadTarget(title, count, descriptionValue, selected,
+                availableGenres, descriptionEntry[0], genreEntry[0], seasonRanges, coverUrl,
+                isNew, anime, originalCoverName);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
