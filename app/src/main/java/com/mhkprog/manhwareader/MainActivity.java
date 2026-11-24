@@ -102,6 +102,8 @@ import android.util.LruCache;
 public final class MainActivity extends Activity {
     static final int REQUEST_FOLDER = 41;
     private static final int REQUEST_COVER = 42;
+    private static final int REQUEST_BACKUP_EXPORT = 43;
+    private static final int REQUEST_BACKUP_IMPORT = 44;
     private static final int BG_DARK = Color.rgb(9, 9, 9);
     private static final int SURFACE_DARK = Color.rgb(20, 20, 20);
     private static final int SURFACE_ALT_DARK = Color.rgb(17, 17, 17);
@@ -154,9 +156,10 @@ public final class MainActivity extends Activity {
     };
     private static final int BUILTIN_THEME_COUNT = FLAT_ACCENT_COLORS.length + GRADIENT_COLORS.length;
     private static final int MAX_GENRE_WEIGHT = 50;
-    private static final String VERSION = "1.4.33";
+    private static final String VERSION = "1.4.34";
     private static final Pattern CHAPTER_NUMBER_PATTERN = Pattern.compile(
             "(?i)^(?:chapter|ch)?\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\b.*)?$");
+    private static final Pattern ENGLISH_GENRE_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9 '&-]*");
     private static final Pattern ANIME_SEASON_RANGE_PATTERN = Pattern.compile(
             "(?i)^(?:S(?:EASON)?\\s*)?([0-9]+)\\s*[:：,]\\s*([0-9]+)\\s*(?:-|TO)\\s*([0-9]+)$");
 
@@ -176,13 +179,9 @@ public final class MainActivity extends Activity {
     private final Set<Long> seenRecommendationIds = new HashSet<>();
     private final Set<Long> recommendationSessionSeenIds = new HashSet<>();
     private final Set<String> favoriteGenrePreferences = new LinkedHashSet<>();
-    private final Set<String> favoriteManhwaIds = new LinkedHashSet<>();
-    private final Set<String> dislikedManhwaIds = new LinkedHashSet<>();
     private final Set<Long> seenAnimeRecommendationIds = new HashSet<>();
     private final Set<Long> animeRecommendationSessionSeenIds = new HashSet<>();
     private final Set<String> favoriteAnimeGenrePreferences = new LinkedHashSet<>();
-    private final Set<String> favoriteAnimeIds = new LinkedHashSet<>();
-    private final Set<String> dislikedAnimeIds = new LinkedHashSet<>();
     private final Set<String> dislikedGenrePreferences = new LinkedHashSet<>();
     private final Set<String> dislikedAnimeGenrePreferences = new LinkedHashSet<>();
     private final Set<String> selectedTagNames = new LinkedHashSet<>();
@@ -199,6 +198,7 @@ public final class MainActivity extends Activity {
         @Override protected int sizeOf(String key, Bitmap value) { return Math.max(1, value.getByteCount() / 1024); }
     };
     private ManhwaStorage storage;
+    private LibraryDatabase libraryDatabase;
     private Typeface vazir;
     private JSONObject library = new JSONObject();
     private String page = "dashboard";
@@ -222,7 +222,7 @@ public final class MainActivity extends Activity {
     private String reorderOriginalLibrary;
     private boolean reorderChanged;
     private View coverRemoveButton;
-    private ManhwaJsonImportTarget activeManhwaJsonImportTarget;
+    private CoverDownloadTarget activeCoverDownloadTarget;
     private FrameLayout systemRoot;
     private LinearLayout appColumn;
     private FrameLayout drawerLayer;
@@ -268,11 +268,10 @@ public final class MainActivity extends Activity {
         }
         vazir = Typeface.createFromAsset(getAssets(), "fonts/Vazirmatn-Regular.ttf");
         storage = new ManhwaStorage(this);
+        libraryDatabase = new LibraryDatabase(this);
         animeMode = getSharedPreferences("app_settings", MODE_PRIVATE).getBoolean("anime_mode", false);
         recommendationState = getSharedPreferences("recommendations", MODE_PRIVATE);
         animeRecommendationState = getSharedPreferences("anime_recommendations", MODE_PRIVATE);
-        loadRecommendationState(false);
-        loadRecommendationState(true);
         android.content.SharedPreferences appearance = getSharedPreferences("appearance", MODE_PRIVATE);
         lightTheme = appearance.getBoolean("light", false);
         accentIndex = Math.max(0, Math.min(themeCount() - 1, appearance.getInt("accent", 0)));
@@ -603,7 +602,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showStorageGate() {
-        TextView message = text("برای نگهداری فهرست و فصل‌ها، پوشه Documents لازم است.", 17, TEXT);
+        TextView message = text("پوشهٔ اختصاصی را برای نگهداری جلدها انتخاب کن. اطلاعات فهرست داخل پایگاه دادهٔ SQLite دستگاه ذخیره می‌شود.", 17, TEXT);
         message.setGravity(Gravity.CENTER);
         message.setPadding(dp(26), dp(24), dp(26), dp(24));
         LinearLayout gate = new LinearLayout(this);
@@ -628,6 +627,18 @@ public final class MainActivity extends Activity {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) loadImageForCover(data.getData());
             return;
         }
+        if (requestCode == REQUEST_BACKUP_EXPORT) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                exportLibraryBackup(data.getData());
+            }
+            return;
+        }
+        if (requestCode == REQUEST_BACKUP_IMPORT) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                confirmLibraryRestore(data.getData());
+            }
+            return;
+        }
         if (requestCode != REQUEST_FOLDER) return;
         if (resultCode == RESULT_OK && data != null && data.getData() != null) {
             try {
@@ -649,6 +660,98 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void chooseLibraryBackupDestination() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, "ManhwaReader-backup.json");
+        try { startActivityForResult(intent, REQUEST_BACKUP_EXPORT); }
+        catch (Exception error) { toast("ساخت فایل پشتیبان در دسترس نیست."); }
+    }
+
+    private void chooseLibraryBackupSource() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try { startActivityForResult(intent, REQUEST_BACKUP_IMPORT); }
+        catch (Exception error) { toast("انتخاب فایل پشتیبان در دسترس نیست."); }
+    }
+
+    private void exportLibraryBackup(Uri destination) {
+        try {
+            String backup = compactLibraryJson().toString(2);
+            try (java.io.OutputStream stream = getContentResolver().openOutputStream(destination, "wt")) {
+                if (stream == null) throw new java.io.IOException("File provider returned no output stream");
+                stream.write(backup.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                stream.flush();
+            }
+            toast("فایل پشتیبان JSON ذخیره شد.");
+        } catch (Exception error) {
+            android.util.Log.e("ManhwaReader", "Could not export library backup", error);
+            toast("ساخت فایل پشتیبان ناموفق بود.");
+        }
+    }
+
+    private void confirmLibraryRestore(Uri source) {
+        AlertDialog confirm = new AlertDialog.Builder(this)
+                .setTitle("بازیابی پشتیبان")
+                .setMessage("اطلاعات فعلی با محتوای این فایل جایگزین می‌شود. ادامه می‌دهی؟")
+                .setNegativeButton("لغو", null)
+                .setPositiveButton("بازیابی", (dialog, which) -> restoreLibraryBackup(source))
+                .create();
+        confirm.show();
+        styleDialogWindow(confirm);
+    }
+
+    private void restoreLibraryBackup(Uri source) {
+        String before = library.toString();
+        boolean oldAnimeMode = animeMode;
+        try (java.io.InputStream stream = getContentResolver().openInputStream(source)) {
+            if (stream == null) throw new java.io.IOException("File provider returned no input stream");
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = stream.read(buffer)) != -1) {
+                total += read;
+                if (total > 25 * 1024 * 1024) throw new java.io.IOException("Backup file is too large");
+                bytes.write(buffer, 0, read);
+            }
+            JSONObject restored = new JSONObject(bytes.toString("UTF-8"));
+            if (!restored.has("manhwas") && !restored.has("animes") && !restored.has("works")) {
+                throw new JSONException("Not a Manhwa Reader backup");
+            }
+            library = restored;
+            normalizeLibrary();
+            if (!saveLibrary()) {
+                restoreLibrary(before);
+                return;
+            }
+            loadRecommendationState(false);
+            loadRecommendationState(true);
+            selectedManhwaIds.clear();
+            selectedChapterKeys.clear();
+            selectedTagNames.clear();
+            activeManhwaId = null;
+            recommendationSessionSeenIds.clear();
+            animeRecommendationSessionSeenIds.clear();
+            setCurrentRecommendationMoodGenre("");
+            setCurrentRecommendationSessionCurrentId(-1);
+            animeMode = oldAnimeMode;
+            canonicalizeAllGenrePreferences();
+            rebuildAllRecommendationStates();
+            showDashboard();
+            toast("پشتیبان بازیابی شد.");
+        } catch (Exception error) {
+            restoreLibrary(before);
+            animeMode = oldAnimeMode;
+            if (libraryDatabase != null) libraryDatabase.save(library);
+            android.util.Log.e("ManhwaReader", "Could not restore library backup", error);
+            toast("بازیابی ناموفق بود؛ فایل JSON را بررسی کن.");
+        }
+    }
+
     private void migrateCoversThen(Runnable completion) {
         try {
             imageExecutor.execute(() -> {
@@ -661,24 +764,26 @@ public final class MainActivity extends Activity {
     }
 
     private void loadLibraryAndDashboard() {
-        String saved;
         try {
-            saved = storage.read("library.json");
-        } catch (Exception error) {
-            toast("خواندن library.json ناموفق بود: " + storage.lastError());
-            showStorageGate();
-            return;
-        }
-        try {
-            library = saved == null ? new JSONObject() : new JSONObject(saved);
+            JSONObject saved = libraryDatabase.load();
+            if (saved == null) {
+                String legacyBackup = storage.read("library.json");
+                saved = legacyBackup == null ? new JSONObject() : new JSONObject(legacyBackup);
+            }
+            library = saved;
             normalizeLibrary();
         } catch (Exception error) {
-            android.util.Log.e("ManhwaReader", "library.json is invalid; preserving the file", error);
-            toast("فهرست مانهواها خوانده نشد؛ فایل قبلی دست‌نخورده باقی ماند.");
+            android.util.Log.e("ManhwaReader", "Could not load the SQLite library or migrate the old backup", error);
+            toast("خواندن اطلاعات ناموفق بود؛ فایل پشتیبان قبلی دست‌نخورده باقی ماند.");
             showStorageGate();
             return;
         }
-        saveLibrary();
+        if (!saveLibrary()) {
+            showStorageGate();
+            return;
+        }
+        loadRecommendationState(false);
+        loadRecommendationState(true);
         canonicalizeAllGenrePreferences();
         rebuildAllRecommendationStates();
         showDashboard();
@@ -728,15 +833,11 @@ public final class MainActivity extends Activity {
     private JSONArray checklistArray(JSONObject item) {
         return item == null ? null : item.optJSONArray(animeMode ? "episodes" : "chapters");
     }
-    private Set<String> currentFavoriteIds() { return animeMode ? favoriteAnimeIds : favoriteManhwaIds; }
     private Set<String> currentFavoriteGenres() {
         return animeMode ? favoriteAnimeGenrePreferences : favoriteGenrePreferences;
     }
     private Set<String> currentDislikedGenres() {
         return animeMode ? dislikedAnimeGenrePreferences : dislikedGenrePreferences;
-    }
-    private Set<String> currentDislikedIds() {
-        return animeMode ? dislikedAnimeIds : dislikedManhwaIds;
     }
     private Set<Long> currentSeenRecommendationIds() {
         return animeMode ? seenAnimeRecommendationIds : seenRecommendationIds;
@@ -814,7 +915,7 @@ public final class MainActivity extends Activity {
         long nextRecommendationId = 1;
         for (int i = 0; i < genres.length(); i++) {
             String genre = canonicalGenre(genres.optString(i));
-            if (!genre.isEmpty() && !"Other".equalsIgnoreCase(genre)) all.add(genre);
+            if (isEnglishGenreName(genre) && !"Other".equalsIgnoreCase(genre)) all.add(genre);
         }
         for (int i = 0; i < manhwas.length(); i++) {
             JSONObject manhwa = manhwas.optJSONObject(i);
@@ -823,6 +924,10 @@ public final class MainActivity extends Activity {
             if (manhwa.optString("id").isEmpty()) manhwa.put("id", UUID.randomUUID().toString());
             if (manhwa.optString("title").isEmpty()) manhwa.put("title", "بدون عنوان");
             manhwa.put("title", englishDigits(manhwa.optString("title")));
+            if (manhwa.optLong("addedAt", 0) <= 0) {
+                manhwa.put("addedAt", System.currentTimeMillis() - (manhwas.length() - i) * 1000L);
+            }
+            manhwa.put("rating", Math.max(0, Math.min(5, manhwa.optInt("rating", 0))));
             manhwa.remove("author");
             manhwa.remove("creator");
             manhwa.remove("studio");
@@ -848,7 +953,7 @@ public final class MainActivity extends Activity {
             JSONArray canonicalManhwaGenres = new JSONArray();
             for (int j = 0; j < manhwaGenres.length(); j++) {
                 String genre = canonicalGenre(manhwaGenres.optString(j));
-                if (genre.isEmpty() || "Other".equalsIgnoreCase(genre)) continue;
+                if (!isEnglishGenreName(genre) || "Other".equalsIgnoreCase(genre)) continue;
                 appendUniqueGenre(canonicalManhwaGenres, genre);
                 all.add(genre);
             }
@@ -874,6 +979,8 @@ public final class MainActivity extends Activity {
             ensureOrderIndexes(chapters, true);
         }
         ensureOrderIndexes(manhwas, false);
+        animeMode = false;
+        canonicalizeLibraryGenres();
         JSONArray cleanGenres = new JSONArray();
         List<String> sorted = new ArrayList<>(all);
         Collections.sort(sorted, String.CASE_INSENSITIVE_ORDER);
@@ -955,7 +1062,7 @@ public final class MainActivity extends Activity {
         Set<String> allGenres = new HashSet<>();
         for (int i = 0; i < genres.length(); i++) {
             String genre = canonicalGenre(genres.optString(i));
-            if (!genre.isEmpty() && !"Other".equalsIgnoreCase(genre)) allGenres.add(genre);
+            if (isEnglishGenreName(genre) && !"Other".equalsIgnoreCase(genre)) allGenres.add(genre);
         }
         Set<Long> recommendationIds = new HashSet<>();
         long nextRecommendationId = 1;
@@ -966,6 +1073,10 @@ public final class MainActivity extends Activity {
             if (anime.optString("id").isEmpty()) anime.put("id", UUID.randomUUID().toString());
             if (anime.optString("title").isEmpty()) anime.put("title", "بدون عنوان");
             anime.put("title", englishDigits(anime.optString("title")));
+            if (anime.optLong("addedAt", 0) <= 0) {
+                anime.put("addedAt", System.currentTimeMillis() - (animes.length() - i) * 1000L);
+            }
+            anime.put("rating", Math.max(0, Math.min(5, anime.optInt("rating", 0))));
             anime.remove("author");
             anime.remove("creator");
             anime.remove("studio");
@@ -985,7 +1096,7 @@ public final class MainActivity extends Activity {
             JSONArray clean = new JSONArray();
             for (int j = 0; j < oldGenres.length(); j++) {
                 String genre = canonicalGenre(oldGenres.optString(j));
-                if (genre.isEmpty() || "Other".equalsIgnoreCase(genre)) continue;
+                if (!isEnglishGenreName(genre) || "Other".equalsIgnoreCase(genre)) continue;
                 appendUniqueGenre(clean, genre);
                 allGenres.add(genre);
             }
@@ -1015,6 +1126,7 @@ public final class MainActivity extends Activity {
             ensureOrderIndexes(episodes, true);
         }
         ensureOrderIndexes(animes, false);
+        canonicalizeLibraryGenres();
         JSONArray sorted = new JSONArray();
         List<String> names = new ArrayList<>(allGenres);
         Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
@@ -1061,7 +1173,7 @@ public final class MainActivity extends Activity {
 
     private void appendUniqueGenre(JSONArray genres, String value) {
         String candidate = canonicalGenre(value);
-        if (candidate.isEmpty() || "Other".equalsIgnoreCase(candidate)) return;
+        if (!isEnglishGenreName(candidate) || "Other".equalsIgnoreCase(candidate)) return;
         for (int i = 0; i < genres.length(); i++) {
             if (candidate.equalsIgnoreCase(genres.optString(i).trim())) return;
         }
@@ -1070,22 +1182,20 @@ public final class MainActivity extends Activity {
 
     private void appendUniqueRawGenre(JSONArray genres, String value) {
         String candidate = value == null ? "" : englishDigits(value.trim());
-        if (candidate.isEmpty() || "Other".equalsIgnoreCase(candidate)) return;
+        if (!isEnglishGenreName(candidate) || "Other".equalsIgnoreCase(candidate)) return;
         for (int i = 0; i < genres.length(); i++) {
             if (candidate.equalsIgnoreCase(genres.optString(i).trim())) return;
         }
         genres.put(candidate);
     }
 
+    private boolean isEnglishGenreName(String value) {
+        return value != null && ENGLISH_GENRE_PATTERN.matcher(value.trim()).matches();
+    }
+
     private boolean saveLibrary() {
-        String contents;
-        try { contents = compactLibraryJson().toString(); }
-        catch (JSONException error) {
-            toast("آماده‌سازی فایل اطلاعات ناموفق بود.");
-            return false;
-        }
-        if (!storage.write("library.json", contents)) {
-            toast("ذخیرهٔ اطلاعات ناموفق بود: " + storage.lastError());
+        if (libraryDatabase == null || !libraryDatabase.save(library)) {
+            toast("ذخیرهٔ اطلاعات در پایگاه دادهٔ دستگاه ناموفق بود.");
             return false;
         }
         return true;
@@ -1332,20 +1442,18 @@ public final class MainActivity extends Activity {
         body.setPadding(dp(18), dp(14), dp(18), dp(24));
 
         body.addView(text("ذخیره‌سازی", 15, MUTED), fieldParams());
-        addPreferenceSwitch(body, "هنگام افزودن، به ابزار هوش مصنوعی دسترسی ندارم",
-                "app_settings", "ai_access_unavailable", false);
         body.addView(textButton("انتخاب پوشهٔ ذخیره‌سازی", "folder", PURPLE, () -> {
             returnToSettingsAfterPicker = true;
             chooseFolder();
         }), fieldParams());
 
-        TextView promptsTitle = text("پرامپت‌های تولید اطلاعات", 15, MUTED);
-        promptsTitle.setPadding(0, dp(16), 0, dp(7));
-        body.addView(promptsTitle);
-        body.addView(textButton("ویرایش پرامپت مانهوا", "edit", themeSecondaryColor(),
-                () -> showJsonPromptEditor(false)), fieldParams());
-        body.addView(textButton("ویرایش پرامپت انیمه", "edit", themeSecondaryColor(),
-                () -> showJsonPromptEditor(true)), fieldParams());
+        TextView backupTitle = text("پشتیبان‌گیری و بازیابی", 15, MUTED);
+        backupTitle.setPadding(0, dp(16), 0, dp(7));
+        body.addView(backupTitle);
+        body.addView(textButton("ساخت نسخهٔ پشتیبان JSON", "download", themeSecondaryColor(),
+                this::chooseLibraryBackupDestination), fieldParams());
+        body.addView(textButton("بازیابی از نسخهٔ پشتیبان JSON", "folder", themeSecondaryColor(),
+                this::chooseLibraryBackupSource), fieldParams());
 
         scroll.addView(body);
         appColumn.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -2188,8 +2296,12 @@ public final class MainActivity extends Activity {
     }
 
     private void addManagedTag(EditText search, LinearLayout rows) {
-        String tag = canonicalGenre(titleCaseWords(englishDigits(search.getText().toString())));
-        if (tag.isEmpty()) { search.setError("نام تگ را وارد کن"); return; }
+        String raw = titleCaseWords(englishDigits(search.getText().toString().trim()));
+        if (!isEnglishGenreName(raw)) {
+            search.setError("نام ژانر را فقط با حروف انگلیسی بنویس.");
+            return;
+        }
+        String tag = canonicalGenre(raw);
         JSONArray tags = contentGenres();
         if (tags == null) tags = new JSONArray();
         if (findGenreName(tags, tag) != null) {
@@ -2219,8 +2331,11 @@ public final class MainActivity extends Activity {
                 .setView(dialogPadding(form)).setNegativeButton("لغو", null)
                 .setPositiveButton("ذخیره", null).create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String newTag = titleCaseWords(name.getText().toString());
-            if (newTag.isEmpty()) { name.setError("نام تگ را وارد کن"); return; }
+            String newTag = titleCaseWords(englishDigits(name.getText().toString().trim()));
+            if (!isEnglishGenreName(newTag)) {
+                name.setError("نام ژانر را فقط با حروف انگلیسی بنویس.");
+                return;
+            }
             String existing = findGenreName(contentGenres(), newTag);
             if (existing != null && !existing.equalsIgnoreCase(oldTag)) {
                 AlertDialog merge = new AlertDialog.Builder(this)
@@ -2247,6 +2362,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean renameTag(String oldTag, String newTag) {
+        if (!isEnglishGenreName(newTag)) return false;
         JSONArray tags = contentGenres();
         String existing = tags == null ? null : findGenreName(tags, newTag);
         if (existing != null && !existing.equalsIgnoreCase(oldTag)) newTag = existing;
@@ -2385,7 +2501,7 @@ public final class MainActivity extends Activity {
 
     private String canonicalGenre(String value) {
         String candidate = value == null ? "" : englishDigits(value.trim());
-        if (candidate.isEmpty()) return "";
+        if (!isEnglishGenreName(candidate)) return "";
         JSONArray groups = genreEquivalentGroups();
         Set<String> visited = new HashSet<>();
         for (int pass = 0; pass <= groups.length(); pass++) {
@@ -2411,25 +2527,50 @@ public final class MainActivity extends Activity {
     }
 
     private void canonicalizeGenrePreferences() {
-        Set<String> favoriteGenres = new LinkedHashSet<>();
-        Set<String> currentFavorites = currentFavoriteGenres();
-        for (String value : currentFavorites) {
-            String canonical = canonicalGenre(value);
-            if (!canonical.isEmpty()) favoriteGenres.add(canonical);
-        }
-        currentFavorites.clear();
-        currentFavorites.addAll(favoriteGenres);
+        canonicalizeGenreSet(currentFavoriteGenres());
+        canonicalizeGenreSet(currentDislikedGenres());
 
         Set<String> filters = new HashSet<>();
         for (String value : activeGenreFilter) {
             String canonical = canonicalGenre(value);
-            if (!canonical.isEmpty()) filters.add(canonical);
+            if (isEnglishGenreName(canonical)) filters.add(canonical);
         }
         activeGenreFilter.clear();
         activeGenreFilter.addAll(filters);
     }
 
+    private void canonicalizeGenreSet(Set<String> values) {
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String value : values) {
+            String canonical = canonicalGenre(value);
+            if (isEnglishGenreName(canonical)) normalized.add(canonical);
+        }
+        values.clear();
+        values.addAll(normalized);
+    }
+
     private void canonicalizeLibraryGenres() {
+        JSONArray oldGroups = genreEquivalentGroups();
+        JSONArray cleanGroups = new JSONArray();
+        for (int i = 0; i < oldGroups.length(); i++) {
+            JSONObject oldGroup = oldGroups.optJSONObject(i);
+            if (oldGroup == null) continue;
+            String primary = titleCaseWords(englishDigits(oldGroup.optString("primary", "").trim()));
+            if (!isEnglishGenreName(primary)) continue;
+            JSONArray aliases = new JSONArray();
+            JSONArray oldAliases = oldGroup.optJSONArray("aliases");
+            if (oldAliases != null) for (int j = 0; j < oldAliases.length(); j++) {
+                String alias = titleCaseWords(englishDigits(oldAliases.optString(j).trim()));
+                if (!alias.equalsIgnoreCase(primary)) appendUniqueRawGenre(aliases, alias);
+            }
+            if (aliases.length() > 0) {
+                JSONObject group = new JSONObject();
+                putJson(group, "primary", primary);
+                putJson(group, "aliases", aliases);
+                cleanGroups.put(group);
+            }
+        }
+        putJson(library, contentGenreEquivalentsKey(), cleanGroups);
         JSONArray known = contentGenres();
         JSONArray canonical = new JSONArray();
         if (known != null) for (int i = 0; i < known.length(); i++) {
@@ -2454,12 +2595,18 @@ public final class MainActivity extends Activity {
     private List<String> allGenreCandidates() {
         LinkedHashSet<String> values = new LinkedHashSet<>();
         JSONArray genres = allGenres();
-        for (int i = 0; i < genres.length(); i++) values.add(genres.optString(i));
+        for (int i = 0; i < genres.length(); i++) {
+            String value = genres.optString(i);
+            if (isEnglishGenreName(value)) values.add(value);
+        }
         JSONArray groups = genreEquivalentGroups();
         for (int i = 0; i < groups.length(); i++) {
             JSONObject group = groups.optJSONObject(i);
             JSONArray aliases = group == null ? null : group.optJSONArray("aliases");
-            if (aliases != null) for (int j = 0; j < aliases.length(); j++) values.add(aliases.optString(j));
+            if (aliases != null) for (int j = 0; j < aliases.length(); j++) {
+                String value = aliases.optString(j);
+                if (isEnglishGenreName(value)) values.add(value);
+            }
         }
         return new ArrayList<>(values);
     }
@@ -2559,8 +2706,8 @@ public final class MainActivity extends Activity {
                 .setView(dialogPadding(form)).setNegativeButton("لغو", null)
                 .setPositiveButton("ذخیره", null).create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String main = titleCaseWords(primary[0]);
-            if (main.isEmpty()) { toast("یک تگ اصلی انتخاب کن."); return; }
+            String main = titleCaseWords(englishDigits(primary[0]));
+            if (!isEnglishGenreName(main)) { toast("نام ژانر را فقط با حروف انگلیسی وارد کن."); return; }
             LinkedHashSet<String> cleanAliases = new LinkedHashSet<>();
             for (String alias : aliases) {
                 String clean = titleCaseWords(alias);
@@ -2599,6 +2746,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean saveGenreEquivalentGroup(String oldPrimary, String primary, Set<String> selectedAliases) {
+        if (!isEnglishGenreName(primary)) return false;
         String before = library.toString();
         Set<String> oldFavorites = new LinkedHashSet<>(currentFavoriteGenres());
         Set<String> oldFilters = new HashSet<>(activeGenreFilter);
@@ -2706,7 +2854,7 @@ public final class MainActivity extends Activity {
 
     private void addGenreName(Collection<String> genres, String value) {
         String candidate = value == null ? "" : value.trim();
-        if (candidate.isEmpty()) return;
+        if (!isEnglishGenreName(candidate)) return;
         for (String genre : genres) if (genre.equalsIgnoreCase(candidate)) return;
         genres.add(candidate);
     }
@@ -2726,7 +2874,7 @@ public final class MainActivity extends Activity {
 
     private String rememberRecommendationGenre(Map<String, String> genres, String value) {
         String name = value == null ? "" : value.trim();
-        if (name.isEmpty() || "Other".equalsIgnoreCase(name)) return null;
+        if (!isEnglishGenreName(name) || "Other".equalsIgnoreCase(name)) return null;
         String key = name.toLowerCase(Locale.ROOT);
         if (!genres.containsKey(key)) genres.put(key, name);
         return key;
@@ -2735,8 +2883,6 @@ public final class MainActivity extends Activity {
     private void rebuildRecommendationWeights() {
         ManhwaRecommendationEngine.UserPreferences preferences = currentRecommendationPreferences();
         Set<String> preferredGenres = currentFavoriteGenres();
-        Set<String> favoriteIds = currentFavoriteIds();
-        Set<String> dislikedIds = currentDislikedIds();
         Set<String> dislikedGenres = currentDislikedGenres();
         Map<String, String> genreNames = new HashMap<>();
         JSONArray knownGenres = allGenres();
@@ -2753,24 +2899,6 @@ public final class MainActivity extends Activity {
         for (String genre : dislikedGenres) {
             String key = rememberRecommendationGenre(genreNames, genre);
             if (key != null) dislikedGenreKeys.add(key);
-        }
-
-        JSONArray items = contentItems();
-        if (items != null) for (int i = 0; i < items.length(); i++) {
-            JSONObject manhwa = items.optJSONObject(i);
-            if (manhwa == null) continue;
-            boolean liked = favoriteIds.contains(manhwa.optString("id"));
-            boolean disliked = dislikedIds.contains(manhwa.optString("id"));
-            if (!liked && !disliked) continue;
-            JSONArray genres = manhwa.optJSONArray("genres");
-            if (genres == null) continue;
-            Set<String> unique = new HashSet<>();
-            for (int j = 0; j < genres.length(); j++) {
-                String key = rememberRecommendationGenre(genreNames, genres.optString(j));
-                if (key != null) unique.add(key);
-            }
-            if (liked) preferredGenreKeys.addAll(unique);
-            if (disliked) dislikedGenreKeys.addAll(unique);
         }
 
         preferences.genreWeights.clear();
@@ -2807,8 +2935,7 @@ public final class MainActivity extends Activity {
             }
             String title = displayManhwaTitle(manhwa);
             result.add(new ManhwaRecommendationEngine.Manhwa(id, title, genreNames,
-                    currentFavoriteIds().contains(manhwa.optString("id")),
-                    currentDislikedIds().contains(manhwa.optString("id"))));
+                    Math.max(0, Math.min(5, manhwa.optInt("rating", 0)))));
         }
         return result;
     }
@@ -2834,50 +2961,70 @@ public final class MainActivity extends Activity {
     }
 
     private void loadRecommendationState(boolean anime) {
-        SharedPreferences state = anime ? animeRecommendationState : recommendationState;
         ManhwaRecommendationEngine.UserPreferences preferences = anime
                 ? animeRecommendationPreferences : recommendationPreferences;
         Set<Long> seenIds = anime ? seenAnimeRecommendationIds : seenRecommendationIds;
         Set<String> favoriteGenres = anime ? favoriteAnimeGenrePreferences : favoriteGenrePreferences;
-        Set<String> favoriteIds = anime ? favoriteAnimeIds : favoriteManhwaIds;
         Set<String> dislikedGenres = anime ? dislikedAnimeGenrePreferences : dislikedGenrePreferences;
-        Set<String> dislikedIds = anime ? dislikedAnimeIds : dislikedManhwaIds;
-        if (state == null) return;
+        preferences.genreWeights.clear();
+        seenIds.clear();
+        favoriteGenres.clear();
+        dislikedGenres.clear();
+
+        JSONObject settings = library.optJSONObject("recommendationSettings");
+        JSONObject saved = settings == null ? null : settings.optJSONObject(anime ? "anime" : "manhwa");
+        if (saved != null) {
+            JSONObject weights = saved.optJSONObject("genreWeights");
+            if (weights != null) {
+                Iterator<String> names = weights.keys();
+                while (names.hasNext()) {
+                    String genre = names.next();
+                    preferences.genreWeights.put(genre.trim().toLowerCase(Locale.ROOT),
+                            Math.max(1, weights.optInt(genre, 10)));
+                }
+            }
+            addJsonStrings(favoriteGenres, saved.optJSONArray("favoriteGenres"));
+            addJsonStrings(dislikedGenres, saved.optJSONArray("dislikedGenres"));
+            JSONArray savedIds = saved.optJSONArray("seenIds");
+            if (savedIds != null) for (int i = 0; i < savedIds.length(); i++) {
+                long id = savedIds.optLong(i, -1);
+                if (id > 0) seenIds.add(id);
+            }
+            return;
+        }
+
+        // One-time migration of the previous release's recommendation preferences.
+        SharedPreferences legacy = anime ? animeRecommendationState : recommendationState;
+        if (legacy == null) return;
         try {
-            JSONObject savedWeights = new JSONObject(state.getString("genre_weights", "{}"));
-            Iterator<String> names = savedWeights.keys();
+            JSONObject weights = new JSONObject(legacy.getString("genre_weights", "{}"));
+            Iterator<String> names = weights.keys();
             while (names.hasNext()) {
                 String genre = names.next();
                 preferences.genreWeights.put(genre.trim().toLowerCase(Locale.ROOT),
-                        Math.max(1, savedWeights.optInt(genre, 10)));
+                        Math.max(1, weights.optInt(genre, 10)));
             }
         } catch (Exception ignored) { }
-        Set<String> savedIds = state.getStringSet(anime ? "seen_animes" : "seen_manhwas", Collections.emptySet());
-        if (savedIds != null) {
-            for (String id : savedIds) {
-                try { seenIds.add(Long.parseLong(id)); }
-                catch (NumberFormatException ignored) { }
-            }
+        Set<String> savedIds = legacy.getStringSet(anime ? "seen_animes" : "seen_manhwas", Collections.emptySet());
+        if (savedIds != null) for (String id : savedIds) {
+            try { seenIds.add(Long.parseLong(id)); }
+            catch (NumberFormatException ignored) { }
         }
-        Set<String> savedGenres = state.getStringSet("favorite_genres", Collections.emptySet());
-        if (savedGenres != null) for (String genre : savedGenres) {
-            String normalized = titleCaseWords(genre);
-            if (!normalized.isEmpty()) favoriteGenres.add(normalized);
+        Set<String> savedGenres = legacy.getStringSet("favorite_genres", Collections.emptySet());
+        if (savedGenres != null) for (String genre : savedGenres) favoriteGenres.add(titleCaseWords(genre));
+        Set<String> savedDislikedGenres = legacy.getStringSet("disliked_genres", Collections.emptySet());
+        if (savedDislikedGenres != null) for (String genre : savedDislikedGenres) dislikedGenres.add(titleCaseWords(genre));
+    }
+
+    private void addJsonStrings(Set<String> destination, JSONArray values) {
+        if (values == null) return;
+        for (int i = 0; i < values.length(); i++) {
+            String value = titleCaseWords(values.optString(i, "").trim());
+            if (!value.isEmpty()) destination.add(value);
         }
-        Set<String> savedDislikedGenres = state.getStringSet("disliked_genres", Collections.emptySet());
-        if (savedDislikedGenres != null) for (String genre : savedDislikedGenres) {
-            String normalized = titleCaseWords(genre);
-            if (!normalized.isEmpty()) dislikedGenres.add(normalized);
-        }
-        Set<String> savedContentIds = state.getStringSet(anime ? "favorite_anime_ids" : "favorite_manhwa_ids", Collections.emptySet());
-        if (savedContentIds != null) favoriteIds.addAll(savedContentIds);
-        Set<String> savedDislikedIds = state.getStringSet(anime ? "disliked_anime_ids" : "disliked_manhwa_ids", Collections.emptySet());
-        if (savedDislikedIds != null) dislikedIds.addAll(savedDislikedIds);
     }
 
     private void persistRecommendationState() {
-        SharedPreferences state = currentRecommendationState();
-        if (state == null) return;
         ManhwaRecommendationEngine.UserPreferences preferences = currentRecommendationPreferences();
         JSONObject weights = new JSONObject();
         for (Map.Entry<String, Integer> entry : preferences.genreWeights.entrySet()) {
@@ -2886,13 +3033,21 @@ public final class MainActivity extends Activity {
         }
         Set<String> ids = new HashSet<>();
         for (Long id : currentSeenRecommendationIds()) ids.add(Long.toString(id));
-        state.edit().putString("genre_weights", weights.toString())
-                .putStringSet(animeMode ? "seen_animes" : "seen_manhwas", ids)
-                .putStringSet("favorite_genres", new HashSet<>(currentFavoriteGenres()))
-                .putStringSet("disliked_genres", new HashSet<>(currentDislikedGenres()))
-                .putStringSet(animeMode ? "favorite_anime_ids" : "favorite_manhwa_ids", new HashSet<>(currentFavoriteIds()))
-                .putStringSet(animeMode ? "disliked_anime_ids" : "disliked_manhwa_ids", new HashSet<>(currentDislikedIds()))
-                .remove("favorite_authors").remove("favorite_studios").apply();
+        JSONObject saved = new JSONObject();
+        try {
+            saved.put("genreWeights", weights);
+            saved.put("seenIds", new JSONArray(ids));
+            saved.put("favoriteGenres", new JSONArray(currentFavoriteGenres()));
+            saved.put("dislikedGenres", new JSONArray(currentDislikedGenres()));
+        } catch (JSONException ignored) { }
+        JSONObject allSettings = library.optJSONObject("recommendationSettings");
+        if (allSettings == null) allSettings = new JSONObject();
+        putJson(allSettings, animeMode ? "anime" : "manhwa", saved);
+        putJson(library, "recommendationSettings", allSettings);
+        if (saveLibrary()) {
+            SharedPreferences legacy = currentRecommendationState();
+            if (legacy != null) legacy.edit().clear().apply();
+        }
     }
 
 
@@ -3227,7 +3382,7 @@ public final class MainActivity extends Activity {
         description.setPadding(0, dp(6), 0, dp(18));
         body.addView(description, new LinearLayout.LayoutParams(-1, -2));
 
-        addManhwaInterestRating(body, manhwa);
+        addContentRating(body, manhwa);
         View chaptersButton = textButton("رفتن به چک‌لیست " + contentUnitPlural(), "manhwa", PURPLE,
                 () -> openChapters(manhwa));
         LinearLayout.LayoutParams chaptersButtonParams = new LinearLayout.LayoutParams(-1, dp(50));
@@ -3290,103 +3445,49 @@ public final class MainActivity extends Activity {
         return Math.round(total / (float) chapters.length());
     }
 
-    private int estimatedInterestRating(JSONObject manhwa) {
-        JSONArray genres = manhwa == null ? null : manhwa.optJSONArray("genres");
-        int totalWeight = 0;
-        int genreCount = 0;
-        if (genres != null) for (int i = 0; i < genres.length(); i++) {
-            String genre = genres.optString(i).trim();
-            if (genre.isEmpty() || "Other".equalsIgnoreCase(genre)) continue;
-            totalWeight += currentRecommendationPreferences().weightFor(genre);
-            genreCount++;
-        }
-        int averageWeight = genreCount == 0 ? 10 : totalWeight / genreCount;
-        int rating = averageWeight >= 28 ? 5 : averageWeight >= 18 ? 4
-                : averageWeight >= 9 ? 3 : averageWeight >= 6 ? 2 : 1;
-        if (manhwa != null && currentFavoriteIds().contains(manhwa.optString("id"))) rating++;
-        return Math.max(1, Math.min(5, rating));
-    }
-
-    private void addManhwaInterestRating(LinearLayout body, JSONObject manhwa) {
-        int estimate = estimatedInterestRating(manhwa);
+    private void addContentRating(LinearLayout body, JSONObject manhwa) {
+        int rating = Math.max(0, Math.min(5, manhwa == null ? 0 : manhwa.optInt("rating", 0)));
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dp(12), dp(12), dp(12), dp(12));
         card.setBackground(roundDrawable(SURFACE, 0xFF29242F, 11));
-        TextView title = text("امتیاز برآوردشدهٔ سامانه", 14, TEXT);
+        TextView title = text("امتیاز شما", 14, TEXT);
         title.setGravity(Gravity.CENTER);
         card.addView(title);
-        TextView estimateText = text("برآورد بر اساس تگ‌ها: " + estimate + " از 5", 12, MUTED);
-        estimateText.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams estimateParams = new LinearLayout.LayoutParams(-1, -2);
-        estimateParams.topMargin = dp(3);
-        card.addView(estimateText, estimateParams);
+        TextView ratingText = text(rating == 0 ? "هنوز امتیازی ثبت نشده" : rating + " از 5", 12, MUTED);
+        ratingText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams ratingParams = new LinearLayout.LayoutParams(-1, -2);
+        ratingParams.topMargin = dp(3);
+        card.addView(ratingText, ratingParams);
         LinearLayout stars = new LinearLayout(this);
         stars.setGravity(Gravity.CENTER);
         stars.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         for (int i = 1; i <= 5; i++) {
-            View star = ratingStar(i <= estimate, i);
+            final int selectedRating = i;
+            View star = ratingStar(i <= rating, i, () -> setContentRating(manhwa, selectedRating));
             stars.addView(star, new LinearLayout.LayoutParams(dp(42), dp(46)));
         }
         LinearLayout.LayoutParams starsParams = new LinearLayout.LayoutParams(-1, -2);
         starsParams.topMargin = dp(4);
         card.addView(stars, starsParams);
-        LinearLayout reactions = new LinearLayout(this);
-        reactions.setGravity(Gravity.CENTER);
-        boolean liked = currentFavoriteIds().contains(manhwa.optString("id"));
-        boolean disliked = currentDislikedIds().contains(manhwa.optString("id"));
-        View likeButton = makeReactionButton("لایک", "thumb_up", PURPLE, liked,
-                () -> toggleContentReaction(manhwa, true));
-        View dislikeButton = makeReactionButton("دیس لایک", "thumb_down", themeSecondaryColor(), disliked,
-                () -> toggleContentReaction(manhwa, false));
-        reactions.addView(likeButton, new LinearLayout.LayoutParams(0, dp(46), 1));
-        LinearLayout.LayoutParams dislikeParams = new LinearLayout.LayoutParams(0, dp(46), 1);
-        dislikeParams.leftMargin = dp(8);
-        reactions.addView(dislikeButton, dislikeParams);
-        LinearLayout.LayoutParams reactionsParams = new LinearLayout.LayoutParams(-1, dp(46));
-        reactionsParams.topMargin = dp(10);
-        card.addView(reactions, reactionsParams);
         body.addView(card, new LinearLayout.LayoutParams(-1, -2));
     }
 
-    private View makeReactionButton(String label, String icon, int accent, boolean selected, Runnable action) {
-        LinearLayout button = new LinearLayout(this);
-        button.setGravity(Gravity.CENTER);
-        button.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        button.setBackground(roundDrawable(selected ? accent : SURFACE,
-                selected ? accent : themedStrokeColor(0xFF40384A), 12));
-        NativeIconView glyph = new NativeIconView(this, icon, selected ? contrastOnColor(accent) : accent);
-        button.addView(glyph, new LinearLayout.LayoutParams(dp(20), dp(20)));
-        TextView title = text(label, 13, selected ? contrastOnColor(accent) : TEXT);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-2, -2);
-        titleParams.rightMargin = dp(7);
-        button.addView(title, titleParams);
-        button.setOnClickListener(v -> action.run());
-        button.setContentDescription(label);
-        button.setClickable(true);
-        button.setFocusable(true);
-        applyPressScale(button);
-        return button;
-    }
-
-    private void toggleContentReaction(JSONObject item, boolean liked) {
+    private void setContentRating(JSONObject item, int rating) {
         if (item == null) return;
-        String id = item.optString("id");
-        if (id.isEmpty()) return;
-        if (liked) {
-            if (!currentFavoriteIds().add(id)) currentFavoriteIds().remove(id);
-            if (currentFavoriteIds().contains(id)) currentDislikedIds().remove(id);
-        } else {
-            if (!currentDislikedIds().add(id)) currentDislikedIds().remove(id);
-            if (currentDislikedIds().contains(id)) currentFavoriteIds().remove(id);
+        String before = library.toString();
+        int current = Math.max(0, Math.min(5, item.optInt("rating", 0)));
+        putJson(item, "rating", current == rating ? 0 : rating);
+        if (!saveLibrary()) {
+            restoreLibrary(before);
+            showManhwaInfo(activeManhwa());
+            return;
         }
-        rebuildRecommendationWeights();
-        persistRecommendationState();
-        showManhwaInfo(item);
+        showManhwaInfo(activeManhwa());
     }
 
-    private View ratingStar(boolean selected, int rating) {
+    private View ratingStar(boolean selected, int rating, Runnable action) {
         View star = new View(this) {
             private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas canvas) {
@@ -3423,9 +3524,11 @@ public final class MainActivity extends Activity {
                 canvas.drawPath(path, paint);
             }
         };
-        star.setContentDescription("امتیاز سامانه " + rating + " از 5");
-        star.setClickable(false);
-        star.setFocusable(false);
+        star.setContentDescription("ثبت امتیاز " + rating + " از 5");
+        star.setOnClickListener(v -> action.run());
+        star.setClickable(true);
+        star.setFocusable(true);
+        applyPressScale(star, .92f);
         return star;
     }
 
@@ -4286,22 +4389,6 @@ public final class MainActivity extends Activity {
         void save(LinkedHashSet<String> selected, ArrayList<String> available);
     }
 
-    private static final class ManhwaJsonData {
-        String title = "";
-        String description = "";
-        String coverUrl = "";
-        int unitCount;
-        boolean hasTitle;
-        boolean hasDescription;
-        boolean hasGenres;
-        boolean hasUnitCount;
-        boolean hasCoverUrl;
-        boolean hasSeasons;
-        boolean validSeasons = true;
-        final ArrayList<String> genres = new ArrayList<>();
-        final ArrayList<AnimeSeasonRange> seasons = new ArrayList<>();
-    }
-
     private static final class AnimeSeasonRange {
         final int seasonNumber;
         final int episodeStart;
@@ -4316,167 +4403,16 @@ public final class MainActivity extends Activity {
         int episodeCount() { return episodeEnd - episodeStart + 1; }
     }
 
-    private static final class ManhwaJsonImportTarget {
+    private static final class CoverDownloadTarget {
         final EditText title;
-        final EditText count;
-        final String[] description;
-        final LinkedHashSet<String> selectedGenres;
-        final ArrayList<String> availableGenres;
-        final View descriptionEntry;
-        final View genreEntry;
-        final EditText seasonRanges;
-        final EditText coverUrl;
-        final boolean isNew;
-        final boolean anime;
         final String originalCoverName;
         boolean coverDownloadInProgress;
 
-        ManhwaJsonImportTarget(EditText title, EditText count,
-                             String[] description,
-                             LinkedHashSet<String> selectedGenres, ArrayList<String> availableGenres,
-                              View descriptionEntry, View genreEntry, EditText seasonRanges, EditText coverUrl,
-                              boolean isNew, boolean anime,
-                             String originalCoverName) {
+        CoverDownloadTarget(EditText title, String originalCoverName) {
             this.title = title;
-            this.count = count;
-            this.description = description;
-            this.selectedGenres = selectedGenres;
-            this.availableGenres = availableGenres;
-            this.descriptionEntry = descriptionEntry;
-            this.genreEntry = genreEntry;
-            this.seasonRanges = seasonRanges;
-            this.coverUrl = coverUrl;
-            this.isNew = isNew;
-            this.anime = anime;
             this.originalCoverName = originalCoverName == null ? "" : originalCoverName;
         }
     }
-
-    private void chooseManhwaJson() {
-        ManhwaJsonImportTarget target = activeManhwaJsonImportTarget;
-        if (target == null) {
-            toast("فرم فعال پیدا نشد.");
-            return;
-        }
-        EditText source = edit("متن JSON را اینجا بچسبانید", true);
-        source.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        source.setMinLines(8);
-        source.setMaxLines(14);
-        source.setGravity(Gravity.TOP | Gravity.RIGHT);
-        ScrollView scroll = new ScrollView(this);
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.addView(source);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("ورود متن JSON")
-                .setView(dialogPadding(scroll))
-                .setNegativeButton("لغو", null)
-                .setPositiveButton("بررسی", null)
-                .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            if (activeManhwaJsonImportTarget != target) {
-                toast("فرم بسته شده است.");
-                dialog.dismiss();
-                return;
-            }
-            try {
-                ManhwaJsonData imported = parseManhwaJsonText(source.getText().toString(), target.anime);
-                dialog.dismiss();
-                showManhwaJsonImportPreview(imported, target);
-            } catch (JSONException error) {
-                source.setError("ساختار JSON را بررسی کنید");
-            }
-        }));
-        dialog.show();
-        styleDialogWindow(dialog);
-        dialog.getWindow().setSoftInputMode(WindowManagerFlags.ADJUST_RESIZE);
-    }
-
-    private ManhwaJsonData parseManhwaJsonText(String source, boolean anime) throws JSONException {
-        String normalized = source == null ? "" : source.trim();
-        if (normalized.startsWith("```") && normalized.endsWith("```")) {
-            int firstLine = normalized.indexOf('\n');
-            if (firstLine >= 0) normalized = normalized.substring(firstLine + 1, normalized.length() - 3).trim();
-        }
-        JSONObject root = new JSONObject(normalized);
-        JSONObject nested = root.optJSONObject(anime ? "anime" : "manhwa");
-        if (nested == null) nested = root.optJSONObject(anime ? "manhwa" : "anime");
-        return parseManhwaJson(nested == null ? root : nested, anime);
-    }
-
-    private String readUtf8(InputStream input) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[4096];
-        int read;
-        while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-        return new String(output.toByteArray(), StandardCharsets.UTF_8);
-    }
-
-    private ManhwaJsonData parseManhwaJson(JSONObject json, boolean anime) {
-        ManhwaJsonData result = new ManhwaJsonData();
-        result.hasTitle = json.has("title") || json.has("name");
-        result.title = json.optString("title", json.optString("name", "")).trim();
-        result.hasDescription = json.has("description");
-        result.description = json.optString("description", "").trim();
-        result.hasCoverUrl = json.has("coverUrl") || json.has("cover_url");
-        result.coverUrl = json.optString("coverUrl", json.optString("cover_url", "")).trim();
-        String countKey = anime ? "episodeCount" : "chapterCount";
-        Object rawCount = json.has(countKey) ? json.opt(countKey)
-                : json.has(anime ? "episodesCount" : "chaptersCount")
-                ? json.opt(anime ? "episodesCount" : "chaptersCount") : json.opt("count");
-        result.hasUnitCount = json.has(countKey) || json.has(anime ? "episodesCount" : "chaptersCount") || json.has("count");
-        if (rawCount instanceof Number) result.unitCount = ((Number) rawCount).intValue();
-        else if (rawCount instanceof String) {
-            try { result.unitCount = Integer.parseInt(englishDigits(((String) rawCount).trim())); }
-            catch (NumberFormatException ignored) { result.unitCount = 0; }
-        }
-
-        result.hasSeasons = json.has("seasons");
-        JSONArray rawSeasons = json.optJSONArray("seasons");
-        if (result.hasSeasons && rawSeasons == null) result.validSeasons = false;
-        if (rawSeasons != null) {
-            Set<Integer> seasonNumbers = new HashSet<>();
-            for (int i = 0; i < rawSeasons.length(); i++) {
-                JSONObject rawSeason = rawSeasons.optJSONObject(i);
-                if (rawSeason == null) { result.validSeasons = false; continue; }
-                int seasonNumber = rawSeason.optInt("seasonNumber", rawSeason.optInt("season", i + 1));
-                int episodeStart = rawSeason.optInt("episodeStart", rawSeason.optInt("startEpisode", 1));
-                int episodeEnd = rawSeason.optInt("episodeEnd", rawSeason.optInt("endEpisode", 0));
-                if (episodeEnd < episodeStart && rawSeason.has("episodeCount")) {
-                    episodeEnd = episodeStart + Math.max(0, rawSeason.optInt("episodeCount", 0)) - 1;
-                }
-                if (seasonNumber < 1 || seasonNumber > 500 || episodeStart < 1
-                        || episodeEnd < episodeStart || episodeEnd > 5000
-                        || !seasonNumbers.add(seasonNumber)) {
-                    result.validSeasons = false;
-                    continue;
-                }
-                result.seasons.add(new AnimeSeasonRange(seasonNumber, episodeStart, episodeEnd));
-            }
-        }
-        if (totalEpisodes(result.seasons) > 5000) result.validSeasons = false;
-        if (!result.hasUnitCount && result.hasSeasons && result.validSeasons) {
-            result.unitCount = totalEpisodes(result.seasons);
-            result.hasUnitCount = true;
-        }
-
-        String genreKey = json.has("genres") ? "genres" : "tags";
-        result.hasGenres = json.has(genreKey);
-        Object rawGenres = json.opt(genreKey);
-        if (rawGenres instanceof JSONArray) {
-            JSONArray genres = (JSONArray) rawGenres;
-            for (int i = 0; i < genres.length(); i++) {
-                String value = genres.optString(i, "").trim();
-                if (!value.isEmpty()) result.genres.add(value);
-            }
-        } else if (rawGenres instanceof String) {
-            for (String value : ((String) rawGenres).split("[,،]")) {
-                if (!value.trim().isEmpty()) result.genres.add(value.trim());
-            }
-        }
-        return result;
-    }
-
     private int totalEpisodes(List<AnimeSeasonRange> seasons) {
         int total = 0;
         if (seasons != null) for (AnimeSeasonRange season : seasons) total += season.episodeCount();
@@ -4528,86 +4464,7 @@ public final class MainActivity extends Activity {
         return ranges;
     }
 
-    private void showManhwaJsonImportPreview(ManhwaJsonData data, ManhwaJsonImportTarget target) {
-        StringBuilder preview = new StringBuilder();
-        if (data.hasTitle) appendPreviewLine(preview, contentTitleLabel(), data.title.isEmpty() ? "خالی" : data.title);
-        if (data.hasDescription) appendPreviewLine(preview, "توضیحات", shortManhwaPreview(data.description));
-        if (data.hasCoverUrl) appendPreviewLine(preview, "نشانی جلد", data.coverUrl.isEmpty() ? "خالی" : shortManhwaPreview(data.coverUrl));
-        if (target.anime && data.hasSeasons) appendPreviewLine(preview, "فصل‌ها", data.validSeasons
-                ? shortManhwaPreview(formatAnimeSeasonRanges(data.seasons)) : "ساختار نامعتبر");
-        if (data.hasGenres) appendPreviewLine(preview, "ژانرها", data.genres.isEmpty()
-                ? "خالی" : android.text.TextUtils.join("، ", data.genres));
-        if (data.hasUnitCount) appendPreviewLine(preview, "تعداد " + contentUnitPlural(), target.isNew
-                ? (data.unitCount > 0 ? Integer.toString(data.unitCount) : "نامعتبر؛ بدون تغییر")
-                : "در ویرایش اعمال نمی‌شود");
-        if (preview.length() == 0) preview.append("فیلد قابل استفاده‌ای در فایل پیدا نشد.");
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("بازبینی اطلاعات JSON")
-                .setMessage(preview.toString())
-                .setNegativeButton("لغو", null)
-                .setPositiveButton("اعمال به فرم", (ignored, which) -> applyManhwaJson(data, target))
-                .create();
-        dialog.show();
-        styleDialogWindow(dialog);
-    }
-
-    private void appendPreviewLine(StringBuilder text, String label, String value) {
-        if (text.length() > 0) text.append('\n');
-        text.append(englishDigits(label)).append(": ").append(englishDigits(value));
-    }
-
-    private String shortManhwaPreview(String value) {
-        String preview = value == null ? "" : value.replace('\n', ' ').trim();
-        if (preview.isEmpty()) return "خالی";
-        return preview.length() <= 150 ? preview : preview.substring(0, 147) + "…";
-    }
-
-    private void applyManhwaJson(ManhwaJsonData data, ManhwaJsonImportTarget target) {
-        if (activeManhwaJsonImportTarget != target) {
-            toast("فرم بسته شده است.");
-            return;
-        }
-        if (target.anime && data.hasSeasons && !data.validSeasons) {
-            toast("ساختار فصل‌ها در JSON معتبر نیست.");
-            return;
-        }
-        if (data.hasTitle) target.title.setText(englishDigits(data.title));
-        if (data.hasDescription) {
-            target.description[0] = data.description;
-            updateManhwaDialogEntryButton(target.descriptionEntry, descriptionButtonSummary(data.description));
-        }
-        if (target.isNew && data.hasUnitCount && data.unitCount > 0 && data.unitCount <= 5000) {
-            target.count.setText(Integer.toString(data.unitCount));
-        }
-        if (target.anime && target.seasonRanges != null && data.hasSeasons) {
-            target.seasonRanges.setText(formatAnimeSeasonRanges(data.seasons));
-            int total = totalEpisodes(data.seasons);
-            if (total > 0 && total <= 5000) target.count.setText(Integer.toString(total));
-        }
-        if (data.hasCoverUrl && target.coverUrl != null) target.coverUrl.setText(data.coverUrl);
-        if (data.hasGenres) {
-            target.selectedGenres.clear();
-            for (String raw : data.genres) {
-                String genre = canonicalGenre(titleCaseWords(raw));
-                if (genre.isEmpty()) continue;
-                String matching = null;
-                for (String available : target.availableGenres) {
-                    if (available.equalsIgnoreCase(genre)) { matching = available; break; }
-                }
-                if (matching == null) {
-                    target.availableGenres.add(genre);
-                    matching = genre;
-                }
-                target.selectedGenres.add(matching);
-            }
-            updateManhwaDialogEntryButton(target.genreEntry, genreButtonSummary(target.selectedGenres));
-        }
-        toast("اطلاعات به فرم اضافه شد؛ برای ذخیره، ثبت اطلاعات را بزن.");
-        if (data.hasCoverUrl && !data.coverUrl.isEmpty()) downloadCoverFromUrl(data.coverUrl, target);
-    }
-
-    private void downloadCoverFromUrl(String address, ManhwaJsonImportTarget target) {
+    private void downloadCoverFromUrl(String address, CoverDownloadTarget target) {
         final String requestedUrl = address == null ? "" : address.trim();
         if (target == null || requestedUrl.isEmpty()) return;
         if (!requestedUrl.regionMatches(true, 0, "https://", 0, 8)) {
@@ -4673,7 +4530,7 @@ public final class MainActivity extends Activity {
             final String errorMessage = failure;
             runOnUiThread(() -> {
                 target.coverDownloadInProgress = false;
-                if (activeManhwaJsonImportTarget != target || isFinishing()) {
+                if (activeCoverDownloadTarget != target || isFinishing()) {
                     if (fileName != null) deleteCoverFile(fileName);
                     return;
                 }
@@ -4690,103 +4547,6 @@ public final class MainActivity extends Activity {
                 toast("جلد در پوشهٔ اختصاصی ذخیره شد.");
             });
         });
-    }
-
-    private void showManhwaJsonPrompt(EditText titleField) {
-        boolean anime = animeMode;
-        try {
-            String prompt = loadJsonPrompt(anime)
-                    .replace("__TITLE_JSON__", JSONObject.quote(titleField.getText().toString().trim()));
-            TextView content = text(prompt, 14, TEXT);
-            content.setTextIsSelectable(true);
-            content.setGravity(Gravity.RIGHT | Gravity.TOP);
-            content.setPadding(dp(14), dp(12), dp(14), dp(12));
-            setRtlTextAlignment(content);
-            ScrollView scroll = new ScrollView(this);
-            scroll.setVerticalScrollBarEnabled(false);
-            scroll.addView(content);
-            AlertDialog dialog = new AlertDialog.Builder(this)
-                    .setTitle("پرامپت دریافت اطلاعات")
-                    .setView(dialogPadding(scroll))
-                    .setNegativeButton("بستن", null)
-                    .setNeutralButton("اشتراک‌گذاری", (ignored, which) -> shareManhwaPrompt(prompt))
-                    .setPositiveButton("کپی متن", (ignored, which) -> {
-                        copyToClipboard("manhwa-json-prompt", prompt);
-                        toast("پرامپت کپی شد.");
-                    })
-                    .create();
-            dialog.show();
-            styleDialogWindow(dialog);
-        } catch (IOException error) {
-            toast("خواندن متن راهنما ناموفق بود.");
-        }
-    }
-
-    private String loadJsonPrompt(boolean anime) throws IOException {
-        String key = anime ? "anime" : "manhwa";
-        SharedPreferences preferences = getSharedPreferences("ai_prompts", MODE_PRIVATE);
-        String saved = preferences.getString(key, null);
-        if (saved != null) return saved;
-        String assetName = anime ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
-        try (InputStream input = getAssets().open(assetName)) {
-            return readUtf8(input);
-        }
-    }
-
-    private void showJsonPromptEditor(boolean anime) {
-        String key = anime ? "anime" : "manhwa";
-        String title = anime ? "پرامپت انیمه" : "پرامپت مانهوا";
-        String defaultPrompt;
-        try {
-            String assetName = anime ? "anime_info_prompt.txt" : "manhwa_info_prompt.txt";
-            try (InputStream input = getAssets().open(assetName)) {
-                defaultPrompt = readUtf8(input);
-            }
-        } catch (IOException error) {
-            toast("خواندن پرامپت پیش‌فرض ناموفق بود.");
-            return;
-        }
-        EditText editor = edit("متن پرامپت", true);
-        editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        editor.setGravity(Gravity.TOP | Gravity.RIGHT);
-        editor.setMinLines(12);
-        editor.setText(getSharedPreferences("ai_prompts", MODE_PRIVATE).getString(key, defaultPrompt));
-        ScrollView promptScroll = new ScrollView(this);
-        promptScroll.setVerticalScrollBarEnabled(false);
-        promptScroll.addView(editor);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("ویرایش " + title)
-                .setView(dialogPadding(promptScroll))
-                .setNegativeButton("لغو", null)
-                .setNeutralButton("پیش‌فرض", null)
-                .setPositiveButton("ذخیره", null)
-                .create();
-        dialog.setOnShowListener(ignored -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                getSharedPreferences("ai_prompts", MODE_PRIVATE).edit()
-                        .putString(key, editor.getText().toString()).apply();
-                dialog.dismiss();
-                toast("پرامپت ذخیره شد.");
-            });
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-                getSharedPreferences("ai_prompts", MODE_PRIVATE).edit().remove(key).apply();
-                dialog.dismiss();
-                toast("پرامپت پیش‌فرض بازیابی شد.");
-            });
-        });
-        dialog.show();
-        styleDialogWindow(dialog);
-        dialog.getWindow().setSoftInputMode(WindowManagerFlags.ADJUST_RESIZE);
-    }
-
-    private void shareManhwaPrompt(String prompt) {
-        Intent share = new Intent(Intent.ACTION_SEND);
-        share.setType("text/plain");
-        share.putExtra(Intent.EXTRA_SUBJECT, "پرامپت اطلاعات " + contentTitleLabel());
-        share.putExtra(Intent.EXTRA_TEXT, prompt);
-        try { startActivity(Intent.createChooser(share, "اشتراک‌گذاری نمونه")); }
-        catch (Exception error) { toast("اشتراک‌گذاری در دسترس نیست."); }
     }
 
     private View manhwaDialogEntryButton(String title, String summary, String icon, Runnable action) {
@@ -5013,15 +4773,6 @@ public final class MainActivity extends Activity {
         EditText count = edit("تعداد " + (anime ? "قسمت" : "فصل"), false);
         count.setInputType(InputType.TYPE_CLASS_NUMBER);
         form.addView(clearableInput(title), fieldParams());
-        View promptButton = textButton("ساخت پرامپت", "help", themeSecondaryColor(),
-                () -> showManhwaJsonPrompt(title));
-        LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(-1, dp(50));
-        promptParams.bottomMargin = dp(8);
-        form.addView(promptButton, promptParams);
-        View importJsonButton = textButton("ورود اطلاعات از JSON", "scan_text", themeSecondaryColor(), this::chooseManhwaJson);
-        LinearLayout.LayoutParams importJsonParams = new LinearLayout.LayoutParams(-1, dp(50));
-        importJsonParams.bottomMargin = dp(8);
-        form.addView(importJsonButton, importJsonParams);
 
         LinearLayout detailsPanel = new LinearLayout(this);
         detailsPanel.setOrientation(LinearLayout.VERTICAL);
@@ -5033,7 +4784,7 @@ public final class MainActivity extends Activity {
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         detailsPanel.addView(clearableInput(coverUrl), fieldParams());
         View downloadCoverButton = textButton("دریافت جلد از لینک", "download", themeSecondaryColor(), () -> {
-            ManhwaJsonImportTarget target = activeManhwaJsonImportTarget;
+            CoverDownloadTarget target = activeCoverDownloadTarget;
             String address = coverUrl.getText().toString().trim();
             if (address.isEmpty()) { coverUrl.setError("لینک مستقیم تصویر را وارد کنید"); return; }
             if (target == null) { toast("فرم فعال پیدا نشد."); return; }
@@ -5082,8 +4833,7 @@ public final class MainActivity extends Activity {
             TextView detailsToggle = text("نمایش جزئیات", 14, PURPLE);
             detailsToggle.setGravity(Gravity.CENTER);
             detailsToggle.setBackground(roundDrawable(SURFACE, 0xFF40384A, 12));
-            boolean showFullForm = getSharedPreferences("app_settings", MODE_PRIVATE)
-                    .getBoolean("ai_access_unavailable", false);
+            boolean showFullForm = false;
             detailsPanel.setVisibility(showFullForm ? View.VISIBLE : View.GONE);
             detailsToggle.setText(showFullForm ? "پنهان کردن جزئیات" : "نمایش جزئیات");
             detailsToggle.setOnClickListener(v -> {
@@ -5097,9 +4847,7 @@ public final class MainActivity extends Activity {
         }
         form.addView(detailsPanel, new LinearLayout.LayoutParams(-1, -2));
 
-        activeManhwaJsonImportTarget = new ManhwaJsonImportTarget(title, count,
-                descriptionValue, selected, availableGenres, descriptionEntry[0], genreEntry[0],
-                seasonRanges, coverUrl, isNew, anime, originalCoverName);
+        activeCoverDownloadTarget = new CoverDownloadTarget(title, originalCoverName);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -5115,8 +4863,8 @@ public final class MainActivity extends Activity {
         dialog.setOnDismissListener(ignored -> {
             if (!coverCommitted[0] && pendingCoverName != null && !pendingCoverName.isEmpty()
                     && !pendingCoverName.equals(originalCoverName)) deleteCoverFile(pendingCoverName);
-            if (activeManhwaJsonImportTarget != null && activeManhwaJsonImportTarget.title == title) {
-                activeManhwaJsonImportTarget = null;
+            if (activeCoverDownloadTarget != null && activeCoverDownloadTarget.title == title) {
+                activeCoverDownloadTarget = null;
             }
             manhwaCoverPreview = null;
             coverRemoveButton = null;
@@ -5124,8 +4872,8 @@ public final class MainActivity extends Activity {
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String manhwaTitle = titleCaseWords(englishDigits(title.getText().toString()));
             if (manhwaTitle.isEmpty()) { title.setError("نام " + itemLabel + " را وارد کن"); return; }
-            if (activeManhwaJsonImportTarget != null && activeManhwaJsonImportTarget.title == title
-                    && activeManhwaJsonImportTarget.coverDownloadInProgress) {
+            if (activeCoverDownloadTarget != null && activeCoverDownloadTarget.title == title
+                    && activeCoverDownloadTarget.coverDownloadInProgress) {
                 toast("صبر کن تا دریافت جلد تمام شود.");
                 return;
             }
@@ -5196,6 +4944,8 @@ public final class MainActivity extends Activity {
                 try {
                     manhwa.put("id", UUID.randomUUID().toString());
                     manhwa.put("recommendationId", nextRecommendationId());
+                    manhwa.put("addedAt", System.currentTimeMillis());
+                    manhwa.put("rating", 0);
                     manhwa.put("title", manhwaTitle);
                     manhwa.put("description", descriptionValue[0]);
                     manhwa.put("genres", savedGenres);
@@ -5484,6 +5234,7 @@ public final class MainActivity extends Activity {
             systemBackCallback = null;
         }
         imageExecutor.shutdown();
+        if (libraryDatabase != null) libraryDatabase.close();
         super.onDestroy();
     }
 
@@ -5517,7 +5268,6 @@ public final class MainActivity extends Activity {
             View actionButton = plainIcons ? plainIconButton(leftIcon, PURPLE, left)
                     : iconButton(leftIcon, PURPLE, false, left);
             actionButton.setTag("header_left_action");
-            if ("favorite".equals(leftIcon)) actionButton.setTag("content_favorite");
             header.addView(actionButton, button);
         }
         if (rightIcon != null) {
@@ -5526,7 +5276,6 @@ public final class MainActivity extends Activity {
             View actionButton = plainIcons ? plainIconButton(rightIcon, PURPLE, right)
                     : iconButton(rightIcon, PURPLE, false, right);
             actionButton.setTag("header_right_action");
-            if ("favorite".equals(rightIcon)) actionButton.setTag("content_favorite");
             header.addView(actionButton, button);
         }
         return header;
@@ -5605,7 +5354,6 @@ public final class MainActivity extends Activity {
             case "edit": return "ویرایش";
             case "hide": return "مخفی کردن مانهوا"; case "show": return "نمایش مانهوا";
             case "delete": return "حذف"; case "image": return "تصویر جلد"; case "settings": return "تنظیمات";
-            case "favorite": return "افزودن به علاقه‌مندی‌ها";
             case "select": return "انتخاب مانهوا";
             case "range": return "آماده‌کردن بازهٔ چپترها";
             case "swap": return "تغییر فهرست";
@@ -5903,6 +5651,11 @@ public final class MainActivity extends Activity {
                 for (String selectedGenre : activeGenreFilter) { boolean found = false; if (genres != null) for (int j = 0; j < genres.length(); j++) if (selectedGenre.equals(genres.optString(j))) found = true; if (!found) { match = false; break; } }
                 if (match) result.add(manhwa);
             }
+            Collections.sort(result, (first, second) -> {
+                int newestFirst = Long.compare(second.optLong("addedAt", 0), first.optLong("addedAt", 0));
+                return newestFirst != 0 ? newestFirst
+                        : Integer.compare(second.optInt("orderIndex", 0), first.optInt("orderIndex", 0));
+            });
             cachedManhwas = result;
             return cachedManhwas;
         }
@@ -5923,12 +5676,9 @@ public final class MainActivity extends Activity {
             applyPressScale(card, .96f);
             card.setOnClickListener(v -> onManhwaCardTap(manhwa));
             card.setOnLongClickListener(v -> {
-                String id = manhwa.optString("id");
-                if (selectedManhwaIds.contains(id)) return startReorderDrag(card, animeMode ? "anime" : "manhwa", id);
                 toggleManhwaSelection(manhwa);
                 return true;
             });
-            setReorderDropTarget(card, animeMode ? "anime" : "manhwa", manhwa.optString("id"));
             int gridWidth = parent.getWidth() > 0 ? parent.getWidth() : getResources().getDisplayMetrics().widthPixels;
             int cellWidth = Math.max(dp(120), (gridWidth - dp(24 + 10)) / 2);
             int artworkHeight = Math.max(dp(160), Math.round((cellWidth - dp(14)) * 1.42f));

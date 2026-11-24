@@ -18,15 +18,13 @@ final class ManhwaRecommendationEngine {
         final long id;
         final String title;
         final List<String> genres;
-        final boolean favorite;
-        final boolean disliked;
+        final int rating;
 
-        Manhwa(long id, String title, List<String> genres, boolean favorite, boolean disliked) {
+        Manhwa(long id, String title, List<String> genres, int rating) {
             this.id = id;
             this.title = title == null ? "" : title;
             this.genres = genres == null ? new ArrayList<>() : new ArrayList<>(genres);
-            this.favorite = favorite;
-            this.disliked = disliked;
+            this.rating = Math.max(0, Math.min(5, rating));
         }
     }
 
@@ -91,7 +89,7 @@ final class ManhwaRecommendationEngine {
         // Averaging prevents manhwas with many tags from receiving extra lottery tickets.
         double genreWeight = uniqueGenres.isEmpty() ? DEFAULT_WEIGHT
                 : totalGenreWeight / uniqueGenres.size();
-        double personalWeight = manhwa.disliked ? 0.25 : manhwa.favorite ? 1.5 : 1.0;
+        double personalWeight = manhwa.rating == 0 ? 1.0 : 0.4 + manhwa.rating * 0.28;
         double temporaryMoodWeight = matchesMood ? 3.0 : 1.0;
         return Math.max(0.05, genreWeight * personalWeight * temporaryMoodWeight);
     }
