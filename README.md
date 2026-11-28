@@ -24,6 +24,6 @@
 .\gradlew.bat :app:copyNamedReleaseApk
 ```
 
-فایل خروجی با نامی مانند `Manhwa-Reader-Android-v1.4.34.apk` در `app/build/outputs/apk/manhwa-reader/` ساخته می‌شود. در مخزن `MHK-prog/manhwas-android`، workflow ساخت نسخهٔ امضاشده را با همین نام به‌عنوان Artifact منتشر می‌کند. برای امضا، secretهای `ANDROID_KEYSTORE_BASE64`، `ANDROID_KEYSTORE_PASSWORD`، `ANDROID_KEY_ALIAS` و `ANDROID_KEY_PASSWORD` باید در تنظیمات مخزن موجود باشند. راهنمای کلید در [ANDROID_UPDATE_SIGNING.md](ANDROID_UPDATE_SIGNING.md) است.
+فایل خروجی با نامی مانند `Manhwa-Reader-Android-v1.4.36.apk` در `app/build/outputs/apk/manhwa-reader/` ساخته می‌شود. در مخزن `MHK-prog/manhwas-android`، workflow ساخت نسخهٔ امضاشده را با همین نام به‌عنوان Artifact منتشر می‌کند. برای امضا، secretهای `ANDROID_KEYSTORE_BASE64`، `ANDROID_KEYSTORE_PASSWORD`، `ANDROID_KEY_ALIAS` و `ANDROID_KEY_PASSWORD` باید در تنظیمات مخزن موجود باشند. راهنمای کلید در [ANDROID_UPDATE_SIGNING.md](ANDROID_UPDATE_SIGNING.md) است.
 
 شناسهٔ بسته `com.mhkprog.manhwareader` و کمینهٔ نسخهٔ اندروید 6.0 (API 23) است.
